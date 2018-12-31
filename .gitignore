@@ -1,0 +1,8 @@
+.database_secret*
+*.json
+*gz
+*~
+.*~
+*pyc
+*log
+scripts
