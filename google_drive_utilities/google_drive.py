@@ -35,22 +35,25 @@ class GoogleDrive(object):
     settings = {}
     secrets = {}
 
-    def __init__(self, settingsfile):
+    def __init__(self, settingsfile='', settings={}):
         '''
         Constructor
         '''
         super(GoogleDrive).__init__(type(self))
         self.settingsfile = settingsfile
+        self.settings = settings
         if len(self.settingsfile) > 0:
             self.setup()
-        else:
-            raise GoogleDriveException("no settingsfile specified")
+            return None
+        if len(self.settings.keys()) > 0:
+            self.setup()
+        
         
     def get_service(self, keyfile, scopes):
         """Get a service that communicates to a Google API.
         Returns:
           A service that is connected to the specified API.
-        """
+        """            
         if self.verbose:
             sys.stdout.write("Acquiring credentials...\n")
         credentials = ServiceAccountCredentials.from_json_keyfile_name(filename=keyfile, scopes=scopes)
@@ -58,30 +61,31 @@ class GoogleDrive(object):
         # Build the service object for use with any API
         if self.verbose:
             sys.stdout.write("Acquiring service...\n")
-        service = discovery.build(serviceName="drive", version="v3", credentials=credentials,
+        self.service = discovery.build(serviceName="drive", version="v3", credentials=credentials,
                                   cache_discovery=False)
         
         if self.verbose:
             sys.stdout.write("Service acquired!\n")
-        return service
+        return self.service
     
     def setup(self):
+        if len(self.settingsfile) > 0:
+            try:
+                with open(self.settingsfile) as f:
+                    self.settings=json.loads(f.read())
+            except FileNotFoundError as e:
+                logger.error("Settings %s not found" % self.settingsfile)
+                sys.stderr.write(e.strerror + ":\n")
+                sys.stderr.write(self.settingsfile + "\n")
+                return None
+        secretfile = self.settings.get("secretfile")
         try:
-            with open(self.settingsfile) as f:
-                self.settings=json.loads(f.read())
-        except FileNotFoundError as e:
-            logger.error("Settings %s not found" % self.settingsfile)
-            sys.stderr.write(e.strerror + ":\n")
-            sys.stderr.write(self.settingsfile + "\n")
-            return None
-        secretsfile = self.settings.get("secretsfile")
-        try:
-            with open(secretsfile) as f:
+            with open(secretfile) as f:
                 self.secrets=json.loads(f.read())
         except FileNotFoundError as e:
-            logger.error("Secrets %s not found" % secretsfile)
+            logger.error("Secrets %s not found" % secretfile)
             sys.stderr.write(e.strerror + ":\n")
-            sys.stderr.write(secretsfile + "\n")
+            sys.stderr.write(secretfile + "\n")
         keyfile = self.settings.get("keyfile")
         scopes = self.settings.get("scopes")
         logfile = self.settings.get("logfile")
@@ -118,7 +122,7 @@ class GoogleDrive(object):
         if testlog:
             logger.info("Test of logging capabilities for info messages")
             logger.error("Test of logging capabilities for error messages")
-        self.service = self.get_service(keyfile, scopes)
+        self.get_service(keyfile, scopes)
         return self.service
     
     def create_new_folder(self, name):
@@ -126,6 +130,8 @@ class GoogleDrive(object):
         Retruns:
             The folder resource
         """
+        if self.service is None:
+            raise GoogleDriveException("GoogleDrive object not initialized yet")
         backupdirs = self.list_files_in_drive(namequery="= '%s'" % name, 
                                          mimetypequery="= 'application/vnd.google-apps.folder'")
         if len(backupdirs) == 0:
@@ -160,6 +166,8 @@ class GoogleDrive(object):
         Retruns:
             True if sucessful
         """
+        if self.service is None:
+            raise GoogleDriveException("GoogleDrive object not initialized yet")
         try:
             file = self.service.files().get(fileId=fileid, fields='name').execute()
             self.service.files().delete(fileId=fileid).execute()
@@ -180,6 +188,8 @@ class GoogleDrive(object):
         Returns:
                 file resource
         """
+        if self.service is None:
+            raise GoogleDriveException("GoogleDrive object not initialized yet")
         file_metadata = None
         if folderID is None:
             file_metadata = {
@@ -213,6 +223,8 @@ class GoogleDrive(object):
         Returns:
                 media object
         """
+        if self.service is None:
+            raise GoogleDriveException("GoogleDrive object not initialized yet")
         if fileId is None or fileName is None:
             return None
         
@@ -244,6 +256,8 @@ class GoogleDrive(object):
         Returns:
                 list of file resources
         """
+        if self.service is None:
+            raise GoogleDriveException("GoogleDrive object not initialized yet")
         q=''
         if len(namequery) > 0:
             q += "name %s" % namequery
@@ -284,4 +298,6 @@ class GoogleDrive(object):
         Returns:
                 fileID, A string of the ID from the uploaded file
         """
+        if self.service is None:
+            raise GoogleDriveException("GoogleDrive object not initialized yet")
         return self.upload_file_to_folder(folderID=None, fileName=fileName)
