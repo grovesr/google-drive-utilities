@@ -234,7 +234,7 @@ class GoogleDrive(object):
     
         return file
     
-    def download_file_from_folder(self, fileId, fileName):
+    def download_file(self, fileId, fileName):
         """Downloads the fileId file
         Returns:
                 media object
@@ -268,7 +268,7 @@ class GoogleDrive(object):
             sys.stdout.write("Download Complete!\n")
         return True
     
-    def list_files_in_drive(self, query="", parentid=''):
+    def list_files_in_drive(self, query=""):
         """Queries Google Drive for all files satisfying name contains string
         Returns:
                 list of file resources
