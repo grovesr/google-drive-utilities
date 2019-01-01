@@ -205,10 +205,9 @@ class GoogleDrive(object):
         try:
             folder = self.service.files().get(fileId=folderID).execute()
             file = self.service.files().create(body=file_metadata, media_body=media, fields='name,id,size,parents').execute()
-            logger.info("Uploaded file %s ID=%s to: %s" % (file.get('name'), file.get('id'), folder.get('name')))
+            logger.info("Uploaded file %s size= %s ID=%s to: %s" % (file.get('name'), file.get('size'), file.get('id'), folder.get('name')))
             if self.verbose:
-                sys.stdout.write("Uploaded file %s ID=%s to: %s\n" % (file.get('name'), file.get('id'), folder.get('name')))
-                sys.stdout.write("File Size: %s \n" % file.get('size'))
+                sys.stdout.write("Uploaded file %s size=%s ID=%s to: %s\n" % (file.get('name'), file.get('size'), file.get('id'), folder.get('name')))
                 sys.stdout.write("parents ID: %s\n" % str(file.get('parents')))
         except HttpError as e:
             if self.verbose:
