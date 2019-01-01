@@ -7,6 +7,7 @@ from __future__ import print_function
 import logging
 import json
 import sys
+import os
 import io
 from googleapiclient import discovery
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
@@ -56,7 +57,15 @@ class GoogleDrive(object):
         """            
         if self.verbose:
             sys.stdout.write("Acquiring credentials...\n")
-        credentials = ServiceAccountCredentials.from_json_keyfile_name(filename=keyfile, scopes=scopes)
+        try:
+            credentials = ServiceAccountCredentials.from_json_keyfile_name(filename=keyfile, scopes=scopes)
+        except FileNotFoundError as e:
+            if self.verbose:
+                sys.stderr.write(e.strerror + ":\n")
+                sys.stderr.write(keyfile + "\n")
+            else:
+                logger.error("keyfile %s not found" % keyfile)
+            return -1    
     
         # Build the service object for use with any API
         if self.verbose:
@@ -74,18 +83,23 @@ class GoogleDrive(object):
                 with open(self.settingsfile) as f:
                     self.settings=json.loads(f.read())
             except FileNotFoundError as e:
-                logger.error("Settings %s not found" % self.settingsfile)
-                sys.stderr.write(e.strerror + ":\n")
-                sys.stderr.write(self.settingsfile + "\n")
+                if self.verbose:
+                    sys.stderr.write(e.strerror + ":\n")
+                    sys.stderr.write(self.settingsfile + "\n")
+                else:
+                    logger.error("Settings %s not found" % self.settingsfile)
                 return None
         secretfile = self.settings.get("secretfile")
         try:
             with open(secretfile) as f:
                 self.secrets=json.loads(f.read())
         except FileNotFoundError as e:
-            logger.error("Secrets %s not found" % secretfile)
-            sys.stderr.write(e.strerror + ":\n")
-            sys.stderr.write(secretfile + "\n")
+            if self.verbose:
+                sys.stderr.write("Secrets %s not found\n" % secretfile)
+                sys.stderr.write(e.strerror + ":\n")
+                sys.stderr.write(secretfile + "\n")
+            else:
+                logger.error("Secrets %s not found" % secretfile)
         keyfile = self.settings.get("keyfile")
         scopes = self.settings.get("scopes")
         logfile = self.settings.get("logfile")
@@ -106,7 +120,10 @@ class GoogleDrive(object):
         emailPassword = self.secrets.get("EMAIL_PASS")
         emailFromUser = self.secrets.get("EMAIL_FROM_USER")
         if adminemail == "":
-            logger.info("No admin email specified using --email argument, no email logging enabled.")
+            if self.verbose:
+                sys.stdout.write("No admin email specified using --email argument, no email logging enabled.\n")
+            else:
+                logger.info("No admin email specified using --email argument, no email logging enabled.")
         else:
             isSecure = None
             if emailUseTLS == "True":
@@ -144,21 +161,20 @@ class GoogleDrive(object):
             except HttpError as e:
                 if self.verbose:
                     sys.stdout.write("unable to create folder %s: %s\n" % (name, str(e)))
+                else:
+                    logger.error("unable to create folder %s: %s" % (name, str(e)))
                 return None
             backupdirs = self.list_files_in_drive(namequery="= '%s'" % name, 
                                              mimetypequery="= 'application/vnd.google-apps.folder'")
             folder = backupdirs[0]
             if self.verbose:
-                sys.stdout.write("Folder Creation Complete\n")
-                sys.stdout.write("Folder Name: %s\n" % folder.get('name'))
-                sys.stdout.write("Folder ID: %s \n" % folder.get('id'))
-            logger.info("Folder %s creation complete, ID=%s" % (folder.get('name'), folder.get('id')))
+                sys.stdout.write("Folder %s creation complete, ID=%s\n" % (folder.get('name'), folder.get('id')))
+            else:
+                logger.info("Folder %s creation complete, ID=%s" % (folder.get('name'), folder.get('id')))
         else:
             folder = backupdirs[0]
             if self.verbose:
-                sys.stdout.write("Folder already exists\n")
-                sys.stdout.write("Folder Name: %s\n" % folder.get('name'))
-                sys.stdout.write("Folder ID: %s \n" % folder.get('id'))
+                sys.stdout.write("Folder %s creation complete, ID=%s\n" % (folder.get('name'), folder.get('id')))
         return folder
     
     def delete_file(self, fileid):
@@ -173,11 +189,13 @@ class GoogleDrive(object):
             self.service.files().delete(fileId=fileid).execute()
             if self.verbose:
                 sys.stdout.write("deleted file %s fileid=%s\n" % (file.get('name'), fileid))
-            logger.info("deleted file %s fileid=%s" % (file.get('name'), fileid))
+            else:
+                logger.info("deleted file %s fileid=%s" % (file.get('name'), fileid))
             result = True
         except HttpError as e:
             if self.verbose:
                 sys.stdout.write("unable to delete file %s fileid=%s: %s\n" % (file.get('name'), fileid, str(e)))
+            else:
                 logger.error("unable to delete file %s fileid=%s: %s" % (file.get('name'), fileid, str(e)))
             result = False
         return result
@@ -193,11 +211,11 @@ class GoogleDrive(object):
         file_metadata = None
         if folderID is None:
             file_metadata = {
-                'name' : fileName
+                'name' : os.path.basename(fileName)
             }
         else:
             file_metadata = {
-                  'name' : fileName,
+                  'name' : os.path.basename(fileName),
                   'parents': [ folderID ]
             }
     
@@ -205,14 +223,15 @@ class GoogleDrive(object):
         try:
             folder = self.service.files().get(fileId=folderID).execute()
             file = self.service.files().create(body=file_metadata, media_body=media, fields='name,id,size,parents').execute()
-            logger.info("Uploaded file %s size= %s ID=%s to: %s" % (file.get('name'), file.get('size'), file.get('id'), folder.get('name')))
             if self.verbose:
-                sys.stdout.write("Uploaded file %s size=%s ID=%s to: %s\n" % (file.get('name'), file.get('size'), file.get('id'), folder.get('name')))
-                sys.stdout.write("parents ID: %s\n" % str(file.get('parents')))
+                sys.stdout.write("Uploaded file %s size= %s ID=%s to: %s\n" % (file.get('name'), file.get('size'), file.get('id'), folder.get('name')))
+            else:
+                logger.info("Uploaded file %s size= %s ID=%s to: %s" % (file.get('name'), file.get('size'), file.get('id'), folder.get('name')))
         except HttpError as e:
             if self.verbose:
                 sys.stdout.write("unable to upload file  %s: %s\n" % (fileName, str(e)))
-            logger.error ("Unable to upload file %s to: %s\n" % (fileName, folderID))
+            else:
+                logger.error ("Unable to upload file %s to: %s\n" % (fileName, folderID))
             return None
     
         return file
@@ -234,7 +253,8 @@ class GoogleDrive(object):
         except HttpError as e:
             if self.verbose:
                 sys.stdout.write("unable to access file ID  %s: %s\n" % (fileId, str(e)))
-            logger.error("unable to access file ID  %s: %s\n" % (fileId, str(e)))
+            else:
+                logger.error("unable to access file ID  %s: %s\n" % (fileId, str(e)))
             return False
         fh = io.FileIO(fileName, mode='wb')
         downloader = MediaIoBaseDownload(fh, request, chunksize=1024*1024)
@@ -250,46 +270,31 @@ class GoogleDrive(object):
             sys.stdout.write("Download Complete!\n")
         return True
     
-    def list_files_in_drive(self, datequery='', namequery="", mimetypequery="", parentid=''):
+    def list_files_in_drive(self, query="", parentid=''):
         """Queries Google Drive for all files satisfying name contains string
         Returns:
                 list of file resources
         """
         if self.service is None:
             raise GoogleDriveException("GoogleDrive object not initialized yet")
-        q=''
-        if len(namequery) > 0:
-            q += "name %s" % namequery
-        if len(mimetypequery) > 0:
-            if q:
-                q += " and "
-            q += "mimeType %s" % mimetypequery
-        if len(parentid) > 0:
-            if q:
-                q += " and "
-            q += "'%s' in parents" % parentid
-        if len(datequery) > 0:
-            if q:
-                q += " and "
-            q += "modifiedTime %s" % datequery
         try:
-            if len(q) > 0:
-                files= self.service.files().list(q=q).execute()
+            if len(query) > 0:
+                files= self.service.files().list(q=query).execute()
             else:
                 files = self.service.files().list().execute()
         except HttpError as e:
             if self.verbose:
-                sys.stdout.write("unable to list files  %s: %s\n" % (q, str(e)))
-            logger.error("unable to list files  %s: %s\n" % (q, str(e)))
+                sys.stdout.write("unable to list files  %s: %s\n" % (query, str(e)))
+            else:
+                logger.error("unable to list files  %s: %s\n" % (query, str(e)))
             return []
         if self.verbose:
             for file in files.get('files'):
                 thisFile = self.service.files().get(fileId=file.get('id'), fields='id,parents,name,size,modifiedTime').execute()
-                sys.stdout.write("File ID: %s \n" % thisFile.get('id'))
-                sys.stdout.write("File Name: %s \n" % thisFile.get('name'))
-                sys.stdout.write("File size: %s\n" % thisFile.get('size'))
-                sys.stdout.write("Modified: %s\n" % thisFile.get('modifiedTime'))
-                sys.stdout.write("parents ID: %s\n" % str(thisFile.get('parents')))
+                sys.stdout.write("%s(id='%s', size='%s', modified='%s'\n" % (thisFile.get('name'), 
+                                                                             thisFile.get('id'), 
+                                                                             thisFile.get('size'), 
+                                                                             thisFile.get('modifiedTime')))
         return files.get('files')
     
     def upload_file_to_root(self, fileName=''):
