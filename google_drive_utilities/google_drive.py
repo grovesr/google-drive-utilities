@@ -149,8 +149,7 @@ class GoogleDrive(object):
         """
         if self.service is None:
             raise GoogleDriveException("GoogleDrive object not initialized yet")
-        backupdirs = self.list_files_in_drive(namequery="= '%s'" % name, 
-                                         mimetypequery="= 'application/vnd.google-apps.folder'")
+        backupdirs = self.list_files_in_drive(query="name = '%s' and mimeType = 'application/vnd.google-apps.folder'" % name)
         if len(backupdirs) == 0:
             folder_metadata = {
             'name' : name,
@@ -164,8 +163,7 @@ class GoogleDrive(object):
                 else:
                     logger.error("unable to create folder %s: %s" % (name, str(e)))
                 return None
-            backupdirs = self.list_files_in_drive(namequery="= '%s'" % name, 
-                                             mimetypequery="= 'application/vnd.google-apps.folder'")
+            backupdirs = self.list_files_in_drive(query="name = '%s' and mimeType = 'application/vnd.google-apps.folder'" % name)
             folder = backupdirs[0]
             if self.verbose:
                 sys.stdout.write("Folder %s creation complete, ID=%s\n" % (folder.get('name'), folder.get('id')))
