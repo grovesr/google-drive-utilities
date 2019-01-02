@@ -268,7 +268,7 @@ class GoogleDrive(object):
             sys.stdout.write("Download Complete!\n")
         return True
     
-    def list_files_in_drive(self, query=""):
+    def list_files_in_drive(self, query="", fields="id,name,size,modifiedTime"):
         """Queries Google Drive for all files satisfying name contains string
         Returns:
                 list of file resources
@@ -288,7 +288,7 @@ class GoogleDrive(object):
             return []
         if self.verbose:
             for file in files.get('files'):
-                thisFile = self.service.files().get(fileId=file.get('id'), fields='id,parents,name,size,modifiedTime').execute()
+                thisFile = self.service.files().get(fileId=file.get('id'), fields=fields).execute()
                 sys.stdout.write("%s(id='%s', size='%s', modified='%s'\n" % (thisFile.get('name'), 
                                                                              thisFile.get('id'), 
                                                                              thisFile.get('size'), 
