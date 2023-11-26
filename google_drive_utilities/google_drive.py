@@ -9,10 +9,12 @@ import json
 import sys
 import os
 import io
-from googleapiclient import discovery
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 from googleapiclient.errors import HttpError
-from oauth2client.service_account import ServiceAccountCredentials
 from logging.handlers import SMTPHandler
 logger = logging.getLogger(__name__)
 
@@ -48,35 +50,52 @@ class GoogleDrive(object):
             return None
         if len(self.settings.keys()) > 0:
             self.setup()
-        
-        
+
+
     def get_service(self, keyfile, scopes):
         """Get a service that communicates to a Google API.
         Returns:
           A service that is connected to the specified API.
-        """            
+        """
         if self.verbose:
             sys.stdout.write("Acquiring credentials...\n")
         try:
-            credentials = ServiceAccountCredentials.from_json_keyfile_name(filename=keyfile, scopes=scopes)
-        except FileNotFoundError as e:
+            credentials = None
+            if os.path.exists("token.json"):
+              credentials = Credentials.from_authorized_user_file("token.json", scopes)
+            # If there are no (valid) credentials available, let the user log in.
+            if not credentials or not credentials.valid:
+              if credentials and credentials.expired and credentials.refresh_token:
+                credentials.refresh(Request())
+                if self.verbose:
+                    sys.stdout.write("Credentials refreshed!\n")
+              else:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    keyfile, scopes
+                )
+                credentials = flow.run_local_server(port=0)
+              # Save the credentials for the next run
+              with open("token.json", "w") as token:
+                token.write(credentials.to_json())
+        except Error as e:
             if self.verbose:
                 sys.stderr.write(e.strerror + ":\n")
                 sys.stderr.write(keyfile + "\n")
             else:
-                logger.error("keyfile %s not found" % keyfile)
-            return -1    
-    
+                logger.error("problem getting credentials %s" % e.strerror)
+                logger.error(keyfile + "\n")
+            return -1
+
         # Build the service object for use with any API
         if self.verbose:
             sys.stdout.write("Acquiring service...\n")
-        self.service = discovery.build(serviceName="drive", version="v3", credentials=credentials,
+        self.service = build(serviceName="drive", version="v3", credentials=credentials,
                                   cache_discovery=False)
-        
+
         if self.verbose:
             sys.stdout.write("Service acquired!\n")
         return self.service
-    
+
     def setup(self):
         if len(self.settingsfile) > 0:
             try:
@@ -106,12 +125,13 @@ class GoogleDrive(object):
         adminemail = self.settings.get("email")
         testlog = self.settings.get("testlog")
         self.verbose = self.settings.get("verbose", False)
-        logging.basicConfig(filename=logfile, 
-                            format='%(levelname)s:%(asctime)s %(message)s', 
+        logging.basicConfig(filename=logfile,
+                            format='%(levelname)s:%(asctime)s %(message)s',
                             level=logging.INFO)
         logging.getLogger('googleapiclient').setLevel(logging.ERROR)
-        logging.getLogger('oauth2client').setLevel(logging.ERROR)
-        
+        logging.getLogger('google').setLevel(logging.ERROR)
+        logging.getLogger('google_auth_oauthlib').setLevel(logging.ERROR)
+
         emailSubject = "Database backup to Google Drive Information!!!"
         emailHost = self.secrets.get("EMAIL_HOST")
         emailUser = self.secrets.get("EMAIL_USER")
@@ -128,11 +148,11 @@ class GoogleDrive(object):
             isSecure = None
             if emailUseTLS == "True":
                 isSecure = ()
-            smtpHandler = SMTPHandler((emailHost, emailPort), 
-                                      emailFromUser, 
-                                      adminemail, 
-                                      emailSubject, 
-                                      credentials=(emailUser, emailPassword,), 
+            smtpHandler = SMTPHandler((emailHost, emailPort),
+                                      emailFromUser,
+                                      adminemail,
+                                      emailSubject,
+                                      credentials=(emailUser, emailPassword,),
                                       secure=isSecure)
             smtpHandler.setLevel(logging.ERROR)
             logger.addHandler(smtpHandler)
@@ -141,15 +161,15 @@ class GoogleDrive(object):
             logger.error("Test of logging capabilities for error messages")
         self.get_service(keyfile, scopes)
         return self.service
-    
+
     def create_new_folder(self, name):
-        """Will create a new folder in the root of the supplied GDrive, 
+        """Will create a new folder in the root of the supplied GDrive,
         Retruns:
             The folder resource
         """
         if self.service is None:
             raise GoogleDriveException("GoogleDrive object not initialized yet")
-        backupdirs = self.list_files_in_drive(query="name = '%s' and mimeType = 'application/vnd.google-apps.folder'" % name)
+        backupdirs = self.list_files_in_drive(query="name = '%s' and mimeType = 'application/vnd.google-apps.folder' and 'root' in parents" % name)
         if len(backupdirs) == 0:
             folder_metadata = {
             'name' : name,
@@ -174,9 +194,9 @@ class GoogleDrive(object):
             if self.verbose:
                 sys.stdout.write("Folder %s creation complete, ID=%s\n" % (folder.get('name'), folder.get('id')))
         return folder
-    
+
     def delete_file(self, fileid):
-        """Will delete the given fileid on the supplied GDrive, 
+        """Will delete the given fileid on the supplied GDrive,
         Retruns:
             True if sucessful
         """
@@ -197,8 +217,8 @@ class GoogleDrive(object):
                 logger.error("unable to delete file %s fileid=%s: %s" % (file.get('name'), fileid, str(e)))
             result = False
         return result
-    
-    
+
+
     def upload_file_to_folder(self, folderID, fileName):
         """Uploads the file to the specified folder id on the said Google Drive
         Returns:
@@ -216,7 +236,7 @@ class GoogleDrive(object):
                   'name' : os.path.basename(fileName),
                   'parents': [ folderID ]
             }
-    
+
         media = MediaFileUpload(fileName, resumable=True)
         try:
             folder = self.service.files().get(fileId=folderID).execute()
@@ -231,9 +251,9 @@ class GoogleDrive(object):
             else:
                 logger.error ("Unable to upload file %s to: %s\n" % (fileName, folderID))
             return None
-    
+
         return file
-    
+
     def download_file(self, fileId, fileName):
         """Downloads the fileId file
         Returns:
@@ -243,7 +263,7 @@ class GoogleDrive(object):
             raise GoogleDriveException("GoogleDrive object not initialized yet")
         if fileId is None or fileName is None:
             return None
-        
+
         request = self.service.files().get_media(fileId=fileId)
         try:
             file = self.service.files().get(fileId=fileId, fields='id,name').execute()
@@ -267,9 +287,9 @@ class GoogleDrive(object):
         if self.verbose:
             sys.stdout.write("Download Complete!\n")
         return True
-    
-    def list_files_in_drive(self, query="", fields="id,name,size,modifiedTime"):
-        """Queries Google Drive for all files satisfying name contains string
+
+    def list_files_in_drive(self, query="", fields="id,name,size,modifiedTime,parents"):
+        """Queries Google Drive for all files satisfying query
         Returns:
                 list of file resources
         """
@@ -289,12 +309,12 @@ class GoogleDrive(object):
         if self.verbose:
             for file in files.get('files'):
                 thisFile = self.service.files().get(fileId=file.get('id'), fields=fields).execute()
-                sys.stdout.write("%s(id='%s', size='%s', modified='%s'\n" % (thisFile.get('name'), 
-                                                                             thisFile.get('id'), 
-                                                                             thisFile.get('size'), 
+                sys.stdout.write("%s(id='%s', size='%s', modified='%s'\n" % (thisFile.get('name'),
+                                                                             thisFile.get('id'),
+                                                                             thisFile.get('size'),
                                                                              thisFile.get('modifiedTime')))
         return files.get('files')
-    
+
     def upload_file_to_root(self, fileName=''):
         """Uploads the file to the root directory on the said Google Drive
         Returns:

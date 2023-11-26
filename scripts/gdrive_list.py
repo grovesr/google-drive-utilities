@@ -1,4 +1,4 @@
-#!/home/grovesr/.virtualenvs/database_backup35/bin/python3.5
+#!/home/grovesr/.virtualenvs/google_drive/bin/python3
 # encoding: utf-8
 '''
 gdrive_list -- is a CLI program that is used to list the contents of Google Drive service accounts
@@ -75,7 +75,7 @@ example call: gdrive_list.py settings.json -q="name contains 'Getting'"
 
         # Process arguments
         args = parser.parse_args()
-        gdrive = GoogleDrive(args.settings) 
+        gdrive = GoogleDrive(args.settings)
         if gdrive.service is not None:
             if args.query is not None:
                 files = gdrive.list_files_in_drive(query=args.query)
@@ -90,7 +90,7 @@ example call: gdrive_list.py settings.json -q="name contains 'Getting'"
         else:
             sys.stderr.write("GoogleDrive not successfully initialized\n")
             return 2
-        
+
     except KeyboardInterrupt:
         ### handle keyboard interrupt ###
         return 0
