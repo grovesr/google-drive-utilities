@@ -214,7 +214,7 @@ example call: gdrive_list.py settings.json -q="name contains 'Getting'"
                 for indx, path in enumerate(paths):
                     if path == pathquery:
                         matchingids.append(indx)
-            if downloadfiles and query is not None or pathquery is not None:
+            if downloadfiles and (query is not None or pathquery is not None):
                 for indx in range(len(matchingids)):
                     try:
                         gdrive.download_file(ids[indx], paths[indx].split('/')[-1])
