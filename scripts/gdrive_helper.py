@@ -1,6 +1,6 @@
 # encoding: utf-8
 '''
-gdrive_list -- is a CLI program that is used to access Google Drive service accounts and perform operations
+gdrive_helper -- is a CLI program that is used to access Google Drive service accounts and perform operations
 
 @author:     Rob Groves
 
@@ -15,6 +15,7 @@ import sys
 import os
 import json
 import logging
+sys.path.insert(0, os.path.expanduser("~/git/google-drive-utilities/scripts"))
 sys.path.insert(0, os.path.expanduser("~/git/google-drive-utilities/google_drive_utilities"))
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
@@ -22,13 +23,12 @@ from google_drive import GoogleDrive
 from google_drive import GoogleDriveException
 from logging.handlers import SMTPHandler
 
-logger = logging.getLogger(__name__)
-
 __version__ = 0.1
 __date__ = '2019-01-01'
 __updated__ = '2019-01-01'
 DEBUG = 0
 TESTRUN = 0
+PROFILE = 0
 
 class CLIError(Exception):
     '''Generic exception to raise and log different fatal errors.'''
@@ -69,8 +69,9 @@ def setup_logging(settings):
     verbose = get_secret(settings, "verbose")
     privatedir = get_secret(settings, "privatedir")
     logging.basicConfig(filename=logfile,
-                        format='%(levelname)s:%(asctime)s %(message)s',
+                        format='%(levelname)s - %(asctime)s - %(filename)s - %(message)s',
                         level=logging.INFO)
+    logger = logging.getLogger(__name__)
     logging.getLogger('googleapiclient').setLevel(logging.ERROR)
     logging.getLogger('google').setLevel(logging.ERROR)
     logging.getLogger('google_auth_oauthlib').setLevel(logging.ERROR)
@@ -85,8 +86,8 @@ def setup_logging(settings):
             sys.stderr.write(e.strerror + ":\n")
             sys.stderr.write(database_secretfile + "\n")
         else:
-            logger.error("Secrets %s not found" % secretfile)
-    emailSubject = "Database backup to Google Drive Information!!!"
+            logger.error("Secrets %s not found" % database_secretfile)
+    emailSubject = "gdrive_helper.py google_drive API access problem!!!"
     emailHost = get_secret(secrets, "EMAIL_HOST")
     emailUser = get_secret(secrets, "EMAIL_USER")
     emailPort = get_secret(secrets, "EMAIL_PORT")
@@ -94,7 +95,7 @@ def setup_logging(settings):
     emailPassword = get_secret(secrets, "EMAIL_PASS")
     emailFromUser = get_secret(secrets, "EMAIL_FROM_USER")
     if adminemail == "":
-        if sverbose:
+        if verbose:
             sys.stdout.write("No admin email specified using --email argument, no email logging enabled.\n")
         else:
             logger.info("No admin email specified using --email argument, no email logging enabled.")
@@ -113,6 +114,7 @@ def setup_logging(settings):
     if testlog:
         logger.info("Test of logging capabilities for info messages")
         logger.error("Test of logging capabilities for error messages")
+    return logger
 
 def main(argv=None): # IGNORE:C0111
     '''Command line options.'''
@@ -140,30 +142,34 @@ def main(argv=None): # IGNORE:C0111
 
 USAGE
 
-example call: gdrive_list.py settings.json -q="name contains 'Getting'"
+example call: python3 gdrive_helper.py settings.json -q="name contains 'Getting'"
 ''' % (program_shortdesc, str(__date__))
 
     try:
         # Setup argument parser
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
-        parser.add_argument("-q", "--query", dest="query", help="query to use when listing Google Drive [default: %(default)s]", default = None)
-        parser.add_argument("-p", "--pathquery", dest="pathquery", help="path query to use when listing Google Drive [default: %(default)s]", default = None)
-        parser.add_argument("--deletefile", dest="deletefile", action='store_true', help="delete queried file from Google Drive [default: %(default)s]", default = False)
-        parser.add_argument("--downloadfiles", dest="downloadfiles", action='store_true', help="download listed files from Google Drive [default: %(default)s]", default = False)
-        parser.add_argument("--createdir", dest="createdir", help="create a directory listed in Google Drive under parentid if supplied else under root[default: %(default)s]", default = None)
-        parser.add_argument("--uploadfile", dest="uploadfile", help="upload file in Google Drive under parentid if supplied else under root [default: %(default)s]", default = None)
-        parser.add_argument("--parentid", dest="parentid", help="parent directory to use when creating file or directory [default: %(default)s]", default = "root")
         parser.add_argument(dest="settingsfile", help="settings file containing connection information [default: %(default)s]", default="./settings.json")
+        parser.add_argument("-q", "--query", dest="query", help="query to use when listing Google Drive [default: %(default)s]", default = None)
+        parser.add_argument("--filterfilepath", dest="filterfilepath", help="use regex to filter files in a folder path from Google Drive [default: %(default)s]", default = None)
+        parser.add_argument("--downloadfiles", dest="downloadfiles", action='store_true', help="download specified in the query or querypath from Google Drive [default: %(default)s]", default = False)
+        parser.add_argument("--deletefilepath", dest="deletefilepath", help="delete queried file (includes path to file) from Google Drive [default: %(default)s]", default = None)
+        parser.add_argument("--deletefileid", dest="deletefileid", help="delete queried file id from Google Drive [default: %(default)s]", default = None)
+        parser.add_argument("--createfolderpath", dest="createfolderpath", help="create a folder path in Google Drive.", default = None)
+        parser.add_argument("--uploadfile", dest="uploadfile", help="upload file in Google Drive under parentpath if supplied else under root [default: %(default)s]", default = None)
+        parser.add_argument("--parentpath", dest="parentpath", help="parent directory path to use when creating file or directory [default: %(default)s]", default = "/")
+        parser.add_argument("--allowduplicate", dest="allowduplicate", action='store_true', help="upload duplicate file if it already exists [default: %(default)s]", default = False)
 
         # Process arguments
         args = parser.parse_args()
         query = args.query
-        pathquery = args.pathquery
-        deletefile = args.deletefile
+        deletefilepath = args.deletefilepath
+        filterfilepath = args.filterfilepath
+        deletefileid = args.deletefileid
         downloadfiles = args.downloadfiles
-        createdir = args.createdir
+        createfolderpath = args.createfolderpath
         uploadfile = args.uploadfile
-        parentid = args.parentid
+        parentpath = args.parentpath
+        allowduplicate = args.allowduplicate
         settingsfile = args.settingsfile
         settings = {}
         
@@ -180,44 +186,73 @@ example call: gdrive_list.py settings.json -q="name contains 'Getting'"
         tokenfile = "%s/%s" % (privatedir, get_secret(settings, "google_tokenfile"))
         scopes = get_secret(settings, "scopes")
         verbose = get_secret(settings, "verbose")
-        setup_logging(settings)
-        if pathquery is not None and query is not None:
-            msg = "You can't supply both a query and a pathquery at the same time"
+        logger = setup_logging(settings)
+        if filterfilepath is not None and query is not None:
+            msg = "You can't supply both a query and a filterfilepath at the same time"
             if verbose:
-                sys.stderr.write("$s\n" % msg)
+                sys.stderr.write("%s\n" % msg)
             else:
                 logger.error(msg)
             return 2
-        if downloadfiles and query is None and pathquery is None:
-            msg = "You need to supply a query or pathquery in order to download files"
+        if downloadfiles and query is None and filterfilepath is None:
+            msg = "You need to supply a query or filterfilepath in order to download files"
             if verbose:
-                sys.stderr.write("\n")
+                sys.stderr.write("%s\n" % msg)
             else:
                 logger.error(msg)
             return 2
-        if deletefile and query is None:
-            msg = "You need to supply a query that returns a single file in order to delete it"
+        if deletefilepath is not None and (query is not None or filterfilepath is not None):
+            msg = "To delete a file do not include a query or filterfilpath, just inlcude the file with its path"
             if verbose:
-                sys.stderr.write("\n")
+                sys.stderr.write("%s\n" % msg)
+            else:
+                logger.error(msg)
+            return 2
+        if deletefilepath is not None and deletefileid is not None:
+            msg = "You can't delete a filepath and a fileid at the same time, choose one or the other"
+            if verbose:
+                sys.stderr.write("%s\n" % msg)
             else:
                 logger.error(msg)
             return 2
         try:
-            gdrive = GoogleDrive(keyfile, tokenfile, scopes, verbose)
-            # get the files from a query if you need them
-            if pathquery is not None:
-                paths, ids = gdrive.list_files_in_drive(pathquery=pathquery, includetrashed=False)
-            if query is not None:
-                paths, ids = gdrive.list_files_in_drive(query=pathquery, includetrashed=False)
-            matchingids = []
-            if pathquery and pathquery in paths:
-                for indx, path in enumerate(paths):
-                    if path == pathquery:
-                        matchingids.append(indx)
-            if downloadfiles and (query is not None or pathquery is not None):
-                for indx in range(len(matchingids)):
+            gdrive = GoogleDrive(keyfile, tokenfile, scopes, verbose=DEBUG)
+            paths = []
+            ids = []
+            files = []
+            if deletefilepath is None and deletefileid is None and createfolderpath is None and uploadfile is None:
+                # get the files from a query if you need them
+                if query is not None:
+                    paths, ids, files = gdrive.list_files_in_drive(query=query, fields="files(id,name,size,modifiedTime,mimeType)", includetrashed=False, verbose=DEBUG)
+                if filterfilepath is not None:
+                    paths, ids, files = gdrive.filter_filepath_in_drive(pathquery=filterfilepath, fields="files(id,name,size,modifiedTime,mimeType)", includetrashed=False, verbose=DEBUG)
+                if not downloadfiles:
+                    # list files if verbose
+                    if verbose:
+                        for indx in range(len(files)):
+                            dirslash = ''
+                            if files[indx].get('mimeType') == 'application/vnd.google-apps.folder':
+                                dirslash = '/'
+                            sys.stdout.write("%s%s (id=%s, size='%s', modified='%s')\n" % (paths[indx],
+                                                                                    dirslash,
+                                                                                  files[indx].get('id'),
+                                                                                  files[indx].get('size'),
+                                                                                  files[indx].get('modifiedTime')))
+            if downloadfiles and len(ids) > 0:
+                downloadpaths = []
+                downloadids = []
+                downloadfiles = []
+                for indx in range(len(ids)):
                     try:
-                        gdrive.download_file(ids[indx], paths[indx].split('/')[-1])
+                        path, id, file = gdrive.download_file(ids[indx], paths[indx].split('/')[-1], verbose=DEBUG)
+                        downloadpaths.append(path)
+                        downloadids.append(id)
+                        downloadfiles.append(file)
+                        msg = "downloaded file %s" % file
+                        if verbose:
+                            sys.stdout.write("%s\n" % msg)
+                        else:
+                            logger.info(msg)
                     except GoogleDriveException as e:
                         msg = str(e)
                         if verbose:
@@ -225,18 +260,56 @@ example call: gdrive_list.py settings.json -q="name contains 'Getting'"
                         else:
                             logger.error(msg)
                         pass
-            if deletefile and len(ids) > 1:
-                if verbose:
-                    msg = "You need to supply a query that returns a single file in order to delete it.  Your query returned %d files" % len(files)
-                    sys.stderr.write("%s\n" % msg)
-                else:
-                    logger.error(msg)
-                return 2
-            if deletefile and len(ids) == 1:
-                gdrive.delete_file(ids[0])
-            if createdir is not None:
+                paths = downloadpaths
+                ids = downloadids
+                files = downloadfiles
+            if deletefilepath is not None:
                 try:
-                    gdrive.create_new_folder(createdir, parentid)
+                    path, id, file = gdrive.delete_file_path(path=deletefilepath, trash=True, verbose=DEBUG)
+                    paths.append(path)
+                    ids.append(id)
+                    files.append(file)
+                    msg = "deleted file %s" % path
+                    if verbose:
+                        sys.stdout.write("%s\n" % msg)
+                    else:
+                        logger.info(msg)
+                except GoogleDriveException as e:
+                    msg = str(e)
+                    if verbose:
+                        sys.stderr.write("%s\n" % msg)
+                    else:
+                        logger.error(msg)
+                    return 2
+            if deletefileid is not None:
+                try:
+                    path, id, file = gdrive.delete_file_id(fileid=deletefileid, trash=True, verbose=DEBUG)
+                    paths.append(path)
+                    ids.append(id)
+                    files.append(file)
+                    msg = "deleted file %s" % path
+                    if verbose:
+                        sys.stdout.write("%s\n" % msg)
+                    else:
+                        logger.info(msg)
+                except GoogleDriveException as e:
+                    msg = str(e)
+                    if verbose:
+                        sys.stderr.write("%s\n" % msg)
+                    else:
+                        logger.error(msg)
+                    return 2
+            if createfolderpath is not None:
+                try:
+                    path, id, file = gdrive.create_folder_path(createfolderpath, verbose=DEBUG)
+                    paths.append(path)
+                    ids.append(id)
+                    files.append(file)
+                    msg = "created folder path %s" % path
+                    if verbose:
+                        sys.stdout.write("%s\n" % msg)
+                    else:
+                        logger.info(msg)
                 except GoogleDriveException as e:
                     msg = str(e)
                     if verbose:
@@ -245,11 +318,26 @@ example call: gdrive_list.py settings.json -q="name contains 'Getting'"
                         logger.error(msg)
                     return 2
             if uploadfile:
-                gdrive.upload_file_to_folder(parentid, uploadfile)
-            
+                try:
+                    path, id, file = gdrive.upload_file_to_path(uploadfile, parentpath, verbose=DEBUG, allowduplicate= allowduplicate)
+                    paths.append(path)
+                    ids.append(id)
+                    files.append(file)
+                    msg = "uploaded file %s to %s (id='%s')" % (uploadfile, path, id)
+                    if verbose:
+                        sys.stdout.write("%s\n" % msg)
+                    else:
+                        logger.info(msg)
+                except GoogleDriveException as e:
+                    msg = str(e)
+                    if verbose:
+                        sys.stderr.write("%s\n" % msg)
+                    else:
+                        logger.error(msg)
+                    return 2
         except GoogleDriveException as e:
             if verbose:
-                msg = ("GoogleDrive not successfully initialized: %s" % str(e))
+                msg = ("Problem accessing Google Drive API: %s" % str(e))
                 sys.stderr.write("%s\n" % msg)
             else:
                 logger.error(msg)
@@ -264,7 +352,21 @@ example call: gdrive_list.py settings.json -q="name contains 'Getting'"
         indent = len(program_name) * " "
         sys.stderr.write(program_name + ": " + repr(e) + "\n")
         sys.stderr.write(indent + "  for help use --help\n")
-        return 2
+    if not verbose:
+        # print out a json version
+        sys.stdout.write(json.dumps({'paths':paths,'files':files}, indent=4))
     return 0
 if __name__ == "__main__":
+    if PROFILE:
+        import cProfile
+        import pstats
+        profile_filename = 'gdrive_helper_profile.txt'
+        cProfile.run('main()', profile_filename)
+        #statsfile = open("profile_stats.txt", "wb")
+        p = pstats.Stats(profile_filename)
+        stats = p.strip_dirs().sort_stats(pstats.SortKey.CUMULATIVE)
+        stats.print_stats()
+        stats.dump_stats("gdrive_helper_profile_stats.txt")
+        #statsfile.close()
+        sys.exit(0)
     sys.exit(main())
