@@ -7,10 +7,10 @@ from __future__ import print_function
 import sys
 import os
 import io
-from pathlib import Path
+import re
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 from googleapiclient.errors import HttpError
@@ -50,11 +50,11 @@ class GoogleDrive(object):
         return None
 
     def setup(self):
-        self.get_service(self.keyfile, self.tokenfile, self.scopes)
-        self.root = self.get_root()
+        self.get_service(self.keyfile, self.tokenfile, self.scopes, verbose=self.verbose)
+        self.root = self.get_root(verbose=self.verbose)
         return self.service
     
-    def get_service(self, keyfile, tokenfile, scopes):
+    def get_service(self, keyfile, tokenfile, scopes, verbose=False):
         """Get a service that commelse:
                     flow = InstalledAppFlow.from_client_secrets_file(
                             keyfile, scopes
@@ -64,7 +64,7 @@ class GoogleDrive(object):
         Returns:
           A service that is connected to the specified API.
         """
-        if self.verbose:
+        if verbose:
             sys.stdout.write("Acquiring credentials...\n")
         try:
             credentials = None
@@ -73,95 +73,115 @@ class GoogleDrive(object):
             # If there are no (valid) credentials available, let the user log in.
             if not credentials or not credentials.valid:
                 if credentials and credentials.expired and credentials.refresh_token:
-                    credentials.refresh(Request())
-                    if self.verbose:
-                        sys.stdout.write("Credentials refreshed!\n")
-                else:
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                            keyfile, scopes
-                            )
-                    credentials = flow.run_local_server(port=0)
-                    # Save the credentials for the next run
-                    tokenpath = Path(tokenfile)
-                    if not tokenpath.parent.is_dir():
-                        try:
-                            tokenpath.parent.mkdir( parents=True, exist_ok=True )
-                        except Exception as e:
-                            msg = "[%s] problem saving token file %s" % (tokenfile, str(e))
-                            if self.verbose:
-                                sys.stderr.write(msg + "\n")
-                            raise GoogleDriveException(msg)
-                    with tokenpath.open(mode="w") as f:
-                        f.write(credentials.to_json())
-                    tokenpath.chmod(0o644)
+                    try:
+                        credentials.refresh(Request())
+                        if verbose:
+                            sys.stdout.write("Credentials refreshed!\n")
+                    except RefreshError as e:
+                        msg = "Unable to refresh token '%s'\n run get_auth_token.pl script to generate one" % e.args[0]
+                        if verbose:
+                            sys.stderr(msg + "\n")
+                        raise GoogleDriveException(msg)
         except Exception as e:
             msg = "problem getting credentials %s" % str(e)
-            if self.verbose:
+            if verbose:
                 sys.stderr.write(msg + "\n")
             raise GoogleDriveException(msg)
 
         # Build the service object for use with any API
-        if self.verbose:
+        if verbose:
             sys.stdout.write("Acquiring service...\n")
         self.service = build(serviceName="drive", version="v3", credentials=credentials,
                                   cache_discovery=False)
 
-        if self.verbose:
+        if verbose:
             sys.stdout.write("Service acquired!\n")
         return self.service
 
-    def get_root(self):
+    def get_root(self, verbose=False):
         if self.service is None:
             raise GoogleDriveException("GoogleDrive object not initialized yet")
         try:
             rootdir = self.service.files().get(fileId='root').execute()
         except HttpError:
             msg = "unable to determine root directory"
-            if self.verbose:
+            if verbose:
                 sys.stdout.write("%s\n" % msg)
             raise GoogleDriveException(msg)
         return rootdir
 
-    def create_new_folder(self, name, parentid='root' ):
-        """Will create a new folder under the parentid, root if none supplied,
+    def create_folder_path(self, path=None, verbose=False):
+        """Will create a new folderpath, including all missing folders
         Retruns:
-            The folder resource
+            path string, id, and folder
         """
         if self.service is None:
             raise GoogleDriveException("GoogleDrive object not initialized yet")
-        existingdirs = self.list_files_in_drive(query="name = '%s' and mimeType = 'application/vnd.google-apps.folder' and '%s' in parents and not trashed" % (name, str(parentid)))
-        if len(existingdirs) == 0:
-            folder_metadata = {
-            'name' : name,
-            'mimeType' : 'application/vnd.google-apps.folder',
-            'parents'  : [str(parentid)],
-            }
-            try:
-                self.service.files().create(body=folder_metadata, fields='id, name').execute()
-            except HttpError as e:
-                msg = "[%s] unable to create folder %s" % (name, e.reason)
-                if self.verbose:
-                    sys.stdout.write("%s\n" % msg)
-                raise GoogleDriveException(msg)
-            # check to see that it was created
-            newdirs = self.list_files_in_drive(query="name = '%s' and mimeType = 'application/vnd.google-apps.folder' and not trashed" % name)
-            if len(newdirs) == 0:
-                msg = "problem creating folder '%s'" % name
-                if self.verbose:
-                    sys.stdout.write("%s\n" % msg)
-                raise GoogleDriveException(msg)
-            else:
-                folder = newdirs[0]
-                if self.verbose:
-                    sys.stdout.write("Folder %s creation complete, ID=%s\n" % (folder.get('name'), folder.get('id')))
-        else:
-            msg = "folder '%s' already exists. Unable to create" % name
-            if self.verbose:
-                sys.stdout.write("%s\n" % msg)
-            raise GoogleDriveException(msg)
-        return folder
+        if path is None:
+            raise GoogleDriveException("You need to specify a path in order to create it")
+        pathlist = path.split('/')
+        builtpath = ''
+        # follow the path down from root and create directories as needed
+        for dirname in pathlist:
+            if len(dirname) == 0:
+                continue
+            parentpath = builtpath
+            builtpath = builtpath + '/' + dirname
+            existingpath = ''
+            existingpaths, existingids, existingdirs = self.list_files_in_drive(pathquery=builtpath, verbose=False)
+            for indx, existingpath in enumerate(existingpaths):
+                isdir = self.service.files().get(fileId=existingids[indx], fields='id,name,mimeType').execute().get("mimeType") == 'application/vnd.google-apps.folder'
+                if existingpath == builtpath and isdir:
+                    # the path directory exists already
+                    if verbose:
+                        sys.stdout.write("%s already exists\n" % builtpath)
+                    break
+                if existingpath == builtpath and not isdir:
+                    raise GoogleDriveException("The path [%s] contains a component that is currently a file and we would have to overwrite it as a directory" % builtpath)
+                # otherwise create the folder
+            if existingpath != builtpath:
+                existingpaths, existingids, existingdirs = self.list_files_in_drive(pathquery=parentpath, verbose=False)
+                if len(existingids) == 0:
+                    raise GoogleDriveException("Unable to find parent id for [%s]. unable to create the folder path [%s]" % (parentpath, builtpath))
+                if len(existingids) > 1:
+                    raise GoogleDriveException("Unable to find unique parent id for [%s]. unable to create the folder path [%s]" % (parentpath, builtpath))
+                folder_metadata = {
+                'name' : dirname,
+                'mimeType' : 'application/vnd.google-apps.folder',
+                'parents'  : [existingids[0]],
+                }
+                try:
+                    folder = self.service.files().create(body=folder_metadata, fields='id, name').execute()
+                except HttpError as e:
+                    msg = "[%s] unable to create folder path %s" % (builtpath, e.reason)
+                    raise GoogleDriveException(msg)
+        return path, folder.get("id"), folder
 
-    def delete_file(self, fileid):
+    def delete_file_path(self, path=None, trash=True, verbose=False):
+        """Will delete the given file on the supplied GDrive,
+        Retruns:
+            True if sucessful
+        """
+        if self.service is None:
+            raise GoogleDriveException("GoogleDrive object not initialized yet")
+        try:
+            pathlist, fileids, files = self.list_files_in_drive(pathquery=path, verbose=verbose)
+            if len(fileids) > 1:
+                raise GoogleDriveException("more than one file found (%s). You can only delete file paths that resolve to a single file" % path)
+            if len(fileids) == 0:
+                msg = "unable to find filepath %s to delete" % path
+                raise GoogleDriveException(msg)
+            if trash:
+                body = {'trashed' : True }
+                file = self.service.files().update(fileId=fileids[0], body=body).execute()
+            else:
+                file = self.service.files().get(fileId=fileids[0], fields='name').execute()
+        except HttpError as e:
+            msg = "unable to delete filepath %s. %s" % (path, e.reason)
+            raise GoogleDriveException(msg)
+        return pathlist[0], fileids[0], files[0]
+    
+    def delete_file_id(self, fileid=None, trash=True, verbose=False):
         """Will delete the given fileid on the supplied GDrive,
         Retruns:
             True if sucessful
@@ -169,80 +189,95 @@ class GoogleDrive(object):
         if self.service is None:
             raise GoogleDriveException("GoogleDrive object not initialized yet")
         try:
-            file = self.service.files().get(fileId=fileid, fields='name').execute()
+            if trash:
+                body = {'trashed' : True }
+                file = self.service.files().update(fileId=fileid, body=body).execute()
+            else:
+                file = self.service.files().get(fileId=fileid, fields='name').execute()
+            if file is None:
+                msg = "unable to find fileid=%s to delete" % fileid
+                raise GoogleDriveException(msg)
+            ids, path = self.get_path(fileid=fileid)
             self.service.files().delete(fileId=fileid).execute()
-            if self.verbose:
-                sys.stdout.write("deleted file %s fileid=%s\n" % (file.get('name'), fileid))
-            result = True
         except HttpError as e:
-            msg = "unable to delete file %s fileid=%s: %s" % (file.get('name'), e.reason)
-            if self.verbose:
-                sys.stdout.write("%s\n" % msg)
+            msg = "unable to delete fileid=%s: %s" % (fileid, e.reason)
             raise GoogleDriveException(msg)
-        return result
+        return path, fileid, file
 
-
-    def upload_file_to_folder(self, folderID, fileName):
+    def upload_file_to_path(self, filename='', parentpath='', verbose=False, allowduplicate=False):
         """Uploads the file to the specified folder id on the said Google Drive
         Returns:
                 file resource
         """
         if self.service is None:
             raise GoogleDriveException("GoogleDrive object not initialized yet")
-        file_metadata = None
-        if folderID is None:
-            file_metadata = {
-                'name' : os.path.basename(fileName)
-            }
+        # get parentpath ids
+        if parentpath != '/':
+            pathlist, parentids, parents = self.list_files_in_drive(pathquery=parentpath)
+            if len(parentids) == 0:
+                raise GoogleDriveException("Unable to find path %s" % parentpath)
+            if len(parentids) > 1:
+                raise GoogleDriveException("There are %d folders at the path '%s' we don't know where to upload the file." % (len(parentids), parentpath))
         else:
-            file_metadata = {
-                  'name' : os.path.basename(fileName),
-                  'parents': [ folderID ]
-            }
-
-        media = MediaFileUpload(fileName, resumable=True)
+            parentpath = ''
+            rootdir = self.get_root(verbose)
+            parentids = [rootdir.get('id')]
+        existingpaths, existingfiles, files = self.list_files_in_drive(pathquery="%s/%s" %(parentpath, filename))
+        if len(existingfiles) > 0 and not allowduplicate:
+            msg = "file %s/%s already exists" % (parentpath, filename)
+            raise GoogleDriveException(msg)
+        file_metadata = {
+              'name' : os.path.basename(filename),
+              'parents': parentids
+        }
         try:
-            folder = self.service.files().get(fileId=folderID).execute()
+            media = MediaFileUpload(filename, resumable=True)
+        except FileNotFoundError :
+            msg="Unable to find file '%s' to upload" % filename
+            if verbose:
+                sys.stdout.write("%s\n" % msg)
+            raise GoogleDriveException(msg)
+                
+        try:
             file = self.service.files().create(body=file_metadata, media_body=media, fields='name,id,size,parents').execute()
-            if self.verbose:
-                sys.stdout.write("Uploaded file %s size= %s ID=%s to: %s\n" % (file.get('name'), file.get('size'), file.get('id'), folder.get('name')))
         except HttpError as e:
-            msg = "unable to upload file %s: %s" % (fileName, e.reason)
-            if self.verbose:
+            msg = "unable to upload file %s: %s" % (filename, e.reason)
+            if verbose:
                 sys.stdout.write("%s\n" % msg)
             raise GoogleDriveException(msg)
 
-        return file
+        return parentpath + '/' + file_metadata['name'], file.get('id'), file
 
-    def download_file(self, fileId, fileName):
+    def download_file(self, fileid, fileName, verbose=False):
         """Downloads the fileId file
         Returns:
                 media object
         """
         if self.service is None:
             raise GoogleDriveException("GoogleDrive object not initialized yet")
-        if fileId is None or fileName is None:
+        if fileid is None or fileName is None:
             return None
 
-        request = self.service.files().get_media(fileId=fileId)
+        request = self.service.files().get_media(fileId=fileid)
         try:
-            file = self.service.files().get(fileId=fileId, fields='id,name,mimeType').execute()
+            file = self.service.files().get(fileId=fileid, fields='id,name').execute()
             fileName = file.get("name")
         except HttpError as e:
-            msg = "unable to access file ID %s %s" % (fileId, e.reason)
-            if self.verbose:
+            msg = "unable to access file ID %s %s" % (fileid, e.reason)
+            if verbose:
                 sys.stdout.write("%s\n" % msg)
             raise GoogleDriveException(msg)
         indx = 1
         name, ext = os.path.splitext(fileName)
-        while os.path.isfile(name + ext):
-            name = "%s(%d)" % (name, indx)
+        newname = name
+        while os.path.isfile(newname + ext):
+            newname = "%s(%d)" % (name, indx)
             indx = indx +1
-        fh = io.FileIO(name + ext, mode='wb')
+        fh = io.FileIO(newname + ext, mode='wb')
         downloader = MediaIoBaseDownload(fh, request, chunksize=1024*1024)
         done = False
-        if self.verbose:
-            sys.stdout.write("Downloading file %s, id=%s, mimeType=%s\n" % (name + ext, fileId, file.get('mimeType')))
+        if verbose:
+            sys.stdout.write("Downloading file %s, id=%s\n" % (newname + ext, fileid))
         while done is False:
             try:
                 status, done = downloader.next_chunk()
@@ -252,13 +287,13 @@ class GoogleDrive(object):
                 os.remove(fh.name)
                 raise GoogleDriveException(msg)
             if status:
-                if self.verbose:
+                if verbose:
                     sys.stdout.write("Download %d%%.\n" % int(status.progress() * 100))
-        if self.verbose:
+        if verbose:
             sys.stdout.write("Download Complete!\n")
-        return True
+        return newname + ext, fileid, file
 
-    def list_files_in_drive(self, query=None, pathquery=None, fields="id,name,size,modifiedTime", includetrashed=False):
+    def list_files_in_drive(self, query=None, pathquery=None, fields="files(id,name,size,modifiedTime)", includetrashed=False, verbose=False):
         """Queries Google Drive for all files satisfying query
         Returns:
                 list of file resources
@@ -274,30 +309,86 @@ class GoogleDrive(object):
             raise GoogleDriveException("GoogleDrive object not initialized yet")
         try:
             if len(query) > 0:
-                files= self.service.files().list(q=query).execute()
-            else:
-                files = self.service.files().list().execute()
+                files= self.service.files().list(q=query, fields=fields).execute()
         except HttpError as e:
             msg = "unable to list files from query '%s': %s" %(query, e.reason)
-            if self.verbose:
+            if verbose:
                 sys.stdout.write("s\n" % msg)
             raise GoogleDriveException(msg)
-        files = files.get('files')
+        fileobjects = files.get('files')
+        files = []
         paths = []
         ids = []
-        for file in files:
+        for file in fileobjects:
             pathlist, pathstring = self.get_path(file.get('id'))
             if pathquery is None or pathquery == pathstring: 
                 ids.append(pathlist[-1])
                 paths.append(pathstring)
-                if self.verbose:
-                    sys.stdout.write("%s (path IDs'%s', size='%s', modified='%s')\n" % (pathstring,
-                                                                                     str(pathlist),
-                                                                                     file.get('size'),
-                                                                                     file.get('modifiedTime')))
-        return paths, ids
+                files.append(file)
+        return paths, ids, files
+    
+    def filter_filepath_in_drive(self, pathquery=None, fields="files(id,name,size,modifiedTime)", includetrashed=False, verbose=False):
+        """Queries Google Drive for all files satisfying query
+        Returns:
+                list of file resources
+        """
+        if pathquery is None:
+            raise GoogleDriveException("You must specify a pathquery")
+        if self.service is None:
+            raise GoogleDriveException("GoogleDrive object not initialized yet")
+        m=re.match("(^/.*?)/?([^/]*?$)",pathquery)
+        if m.groups() is None:
+            raise GoogleDriveException("unable to parse the filepath [%s] with regex %s" % pathquery)
+        parentpath = m.groups()[0]
+        wildcard = m.groups()[1]
+        if len(wildcard) == 0:
+            wildcard = '.*'
+        if parentpath == '/':
+            try:
+                query = "'root' in parents"
+                if not includetrashed:
+                    query = query + " and not trashed"
+                files= self.service.files().list(q=query, fields=fields).execute()
+            except HttpError as e:
+                msg = "unable to list files from query '%s': %s" %(query, e.reason)
+                if verbose:
+                    sys.stdout.write("s\n" % msg)
+                raise GoogleDriveException(msg)
+        else:
+            parentpaths, parentids, parents = self.list_files_in_drive(pathquery=parentpath, fields=fields)
+            if len(parentids) > 1:
+                raise GoogleDriveException("Found more than one parent path, parent path must reslolve to a single folder")
+            if len(parentids) == 0:
+                raise GoogleDriveException("unable to find the parent path %s" % parentpath)
+            parentid = parentids[0]
+            query = "'%s' in parents" % parentid
+            if not includetrashed:
+                query = query + " and not trashed"
+            try:
+                if len(query) > 0:
+                    files= self.service.files().list(q=query, fields=fields).execute()
+            except HttpError as e:
+                msg = "unable to list files from query '%s': %s" %(query, e.reason)
+                if verbose:
+                    sys.stdout.write("s\n" % msg)
+                raise GoogleDriveException(msg)
+        fileobjects = files.get('files')
+        files = []
+        paths = []
+        ids = []
+        for file in fileobjects:
+            pathlist, pathstring = self.get_path(file.get('id'))
+            if parentpath == '/':
+                sep = ''
+            else:
+                sep = '/'
+            if re.match(parentpath + sep + wildcard,pathstring): 
+                ids.append(pathlist[-1])
+                paths.append(pathstring)
+                files.append(file)
+        return paths, ids, files
 
-    def get_path(self, fileid=None):
+    def get_path(self, fileid=None, verbose=False):
         """ return the path to the file"""
         if self.service is None:
             raise GoogleDriveException("GoogleDrive object not initialized yet")
@@ -308,7 +399,7 @@ class GoogleDrive(object):
                 file= self.service.files().get(fileId=fileid, fields='name,id,parents').execute()
         except HttpError:
             msg = "unable to find file from id '%s'" % str(id)
-            if self.verbose:
+            if verbose:
                 sys.stdout.write("s\n" % msg)
             raise GoogleDriveException(msg)
         parents = file.get('parents')
