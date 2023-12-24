@@ -1,3 +1,4 @@
 eclipse.preferences.version=1
+encoding//scripts/drive_backup.py=utf-8
 encoding//scripts/gdrive_helper.py=utf-8
 encoding//scripts/get_auth_token.py=utf-8

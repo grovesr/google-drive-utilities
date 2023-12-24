@@ -133,6 +133,7 @@ class GoogleDrive(object):
                 isdir = self.service.files().get(fileId=existingids[indx], fields='id,name,mimeType').execute().get("mimeType") == 'application/vnd.google-apps.folder'
                 if existingpath == builtpath and isdir:
                     # the path directory exists already
+                    folder = existingdirs[indx]
                     if verbose:
                         sys.stdout.write("%s already exists\n" % builtpath)
                     break
