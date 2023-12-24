@@ -197,7 +197,7 @@ class GoogleDrive(object):
             if file is None:
                 msg = "unable to find fileid=%s to delete" % fileid
                 raise GoogleDriveException(msg)
-            ids, path = self.get_path(fileid=fileid)
+            ids, path = self.get_path(file=file)
             self.service.files().delete(fileId=fileid).execute()
         except HttpError as e:
             msg = "unable to delete fileid=%s: %s" % (fileid, e.reason)
@@ -220,8 +220,7 @@ class GoogleDrive(object):
                 raise GoogleDriveException("There are %d folders at the path '%s' we don't know where to upload the file." % (len(parentids), parentpath))
         else:
             parentpath = ''
-            rootdir = self.get_root(verbose)
-            parentids = [rootdir.get('id')]
+            parentids = [self.root.get('id')]
         existingpaths, existingfiles, files = self.list_files_in_drive(pathquery="%s/%s" %(parentpath, filename))
         if len(existingfiles) > 0 and not allowduplicate:
             msg = "file %s/%s already exists" % (parentpath, filename)
@@ -293,7 +292,7 @@ class GoogleDrive(object):
             sys.stdout.write("Download Complete!\n")
         return newname + ext, fileid, file
 
-    def list_files_in_drive(self, query=None, pathquery=None, fields="files(id,name,size,modifiedTime)", includetrashed=False, verbose=False):
+    def list_files_in_drive(self, query=None, pathquery=None, fields="files(id,name,size,modifiedTime,parents)", includetrashed=False, verbose=False):
         """Queries Google Drive for all files satisfying query
         Returns:
                 list of file resources
@@ -320,14 +319,14 @@ class GoogleDrive(object):
         paths = []
         ids = []
         for file in fileobjects:
-            pathlist, pathstring = self.get_path(file.get('id'))
+            pathlist, pathstring = self.get_path(file=file)
             if pathquery is None or pathquery == pathstring: 
                 ids.append(pathlist[-1])
                 paths.append(pathstring)
                 files.append(file)
         return paths, ids, files
     
-    def filter_filepath_in_drive(self, pathquery=None, fields="files(id,name,size,modifiedTime)", includetrashed=False, verbose=False):
+    def filter_filepath_in_drive(self, pathquery=None, fields="files(id,name,size,modifiedTime,parents)", includetrashed=False, verbose=False):
         """Queries Google Drive for all files satisfying query
         Returns:
                 list of file resources
@@ -377,7 +376,7 @@ class GoogleDrive(object):
         paths = []
         ids = []
         for file in fileobjects:
-            pathlist, pathstring = self.get_path(file.get('id'))
+            pathlist, pathstring = self.get_path(file=file)
             if parentpath == '/':
                 sep = ''
             else:
@@ -388,14 +387,16 @@ class GoogleDrive(object):
                 files.append(file)
         return paths, ids, files
 
-    def get_path(self, fileid=None, verbose=False):
+    def get_path(self, file=None, fileid=None, verbose=False):
         """ return the path to the file"""
         if self.service is None:
             raise GoogleDriveException("GoogleDrive object not initialized yet")
-        if fileid is None:
-            raise GoogleDriveException("no fileid passed into get_path command")
+        if fileid is None and file is None:
+            raise GoogleDriveException("no fileid or file object passed into get_path command")
+        if file is not None and fileid is not None:
+            raise GoogleDriveException("both fileid and file object passed into get_path command. you must specify one or the other")
         try:
-            if fileid is not None:
+            if file is None:
                 file= self.service.files().get(fileId=fileid, fields='name,id,parents').execute()
         except HttpError:
             msg = "unable to find file from id '%s'" % str(id)
@@ -410,7 +411,7 @@ class GoogleDrive(object):
             pathlist = [file.get('id')]
             return pathlist, '/' + file.get('name')
         else:
-            parent = parents[0]
-            pathlist, thisparentpath = self.get_path(fileid=parent)
+            parent = self.service.files().get(fileId=parents[0], fields='name,id,parents').execute()
+            pathlist, thisparentpath = self.get_path(file=parent)
             pathlist.append(file.get('id'))
             return pathlist, thisparentpath + '/' + file.get('name')

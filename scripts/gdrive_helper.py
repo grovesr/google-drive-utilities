@@ -24,8 +24,8 @@ from google_drive import GoogleDriveException
 from logging.handlers import SMTPHandler
 
 __version__ = 0.1
-__date__ = '2019-01-01'
-__updated__ = '2019-01-01'
+__date__ = '2024-01-01'
+__updated__ = '2024-01-01'
 DEBUG = 0
 TESTRUN = 0
 PROFILE = 0
@@ -223,9 +223,10 @@ example call: python3 gdrive_helper.py settings.json -q="name contains 'Getting'
             if deletefilepath is None and deletefileid is None and createfolderpath is None and uploadfile is None:
                 # get the files from a query if you need them
                 if query is not None:
-                    paths, ids, files = gdrive.list_files_in_drive(query=query, fields="files(id,name,size,modifiedTime,mimeType)", includetrashed=False, verbose=DEBUG)
+                    # allow general queries to retrieve trashed files
+                    paths, ids, files = gdrive.list_files_in_drive(query=query, includetrashed=True, verbose=DEBUG)
                 if filterfilepath is not None:
-                    paths, ids, files = gdrive.filter_filepath_in_drive(pathquery=filterfilepath, fields="files(id,name,size,modifiedTime,mimeType)", includetrashed=False, verbose=DEBUG)
+                    paths, ids, files = gdrive.filter_filepath_in_drive(pathquery=filterfilepath, includetrashed=False, verbose=DEBUG)
                 if not downloadfiles:
                     # list files if verbose
                     if verbose:
