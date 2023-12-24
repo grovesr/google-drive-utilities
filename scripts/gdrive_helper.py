@@ -15,7 +15,6 @@ import sys
 import os
 import json
 import logging
-sys.path.insert(0, os.path.expanduser("~/git/google-drive-utilities/scripts"))
 sys.path.insert(0, os.path.expanduser("~/git/google-drive-utilities/google_drive_utilities"))
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
@@ -337,8 +336,8 @@ example call: python3 gdrive_helper.py settings.json -q="name contains 'Getting'
                         logger.error(msg)
                     return 2
         except GoogleDriveException as e:
+            msg = ("Problem accessing Google Drive API: %s" % str(e))
             if verbose:
-                msg = ("Problem accessing Google Drive API: %s" % str(e))
                 sys.stderr.write("%s\n" % msg)
             else:
                 logger.error(msg)
@@ -353,9 +352,6 @@ example call: python3 gdrive_helper.py settings.json -q="name contains 'Getting'
         indent = len(program_name) * " "
         sys.stderr.write(program_name + ": " + repr(e) + "\n")
         sys.stderr.write(indent + "  for help use --help\n")
-    if not verbose:
-        # print out a json version
-        sys.stdout.write(json.dumps({'paths':paths,'files':files}, indent=4))
     return 0
 if __name__ == "__main__":
     if PROFILE:
