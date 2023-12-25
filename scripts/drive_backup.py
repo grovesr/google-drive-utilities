@@ -200,6 +200,7 @@ USAGE
             backupfolderpath, backupfolderid, backupfolderfile = gdrive.create_folder_path(backupfolder)
             successful = []
             for directory in directories:
+                directory = os.path.expanduser(directory)
                 path = Path(directory)
                 parentname = str(path.parent.absolute())
                 dirname = path.parts[-1]
