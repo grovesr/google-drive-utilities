@@ -336,7 +336,7 @@ example call: python3 gdrive_helper.py settings.json -q="name contains 'Getting'
                         logger.error(msg)
                     return 2
         except GoogleDriveException as e:
-            msg = ("Problem accessing Google Drive API: %s" % str(e))
+            msg = "Problem accessing Google Drive API: %s" % str(e)
             if verbose:
                 sys.stderr.write("%s\n" % msg)
             else:

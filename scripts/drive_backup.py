@@ -258,7 +258,7 @@ USAGE
             return 0
         except GoogleDriveException as e:
             if verbose:
-                msg = ("Problem accessing Google Drive API: %s" % str(e))
+                msg = "Problem accessing Google Drive API: %s" % str(e)
                 sys.stderr.write("%s\n" % msg)
             else:
                 logger.error(msg)
