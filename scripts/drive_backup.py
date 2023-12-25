@@ -257,8 +257,8 @@ USAGE
                 logger.info("Uploaded the following directories to Google Drive: %s" % str(successful))
             return 0
         except GoogleDriveException as e:
+            msg = "Problem accessing Google Drive API: %s" % str(e)
             if verbose:
-                msg = "Problem accessing Google Drive API: %s" % str(e)
                 sys.stderr.write("%s\n" % msg)
             else:
                 logger.error(msg)
