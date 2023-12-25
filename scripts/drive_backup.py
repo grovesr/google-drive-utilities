@@ -23,7 +23,7 @@ from argparse import RawDescriptionHelpFormatter
 from google_drive import GoogleDrive
 from google_drive import GoogleDriveException
 from logging.handlers import SMTPHandler
-from time import time
+import time
 from datetime import datetime
 from subprocess import run, PIPE, CalledProcessError
 from pathlib import Path
@@ -225,7 +225,7 @@ USAGE
                         # try again after a 5 second delay
                         time.sleep(5)
                         try:
-                            run(["tar", exclude, "-czf", backupfile,"--directory", parentname, dirname], stderr=PIPE, check=True)
+                            run(tarargs, stderr=PIPE, check=True)
                         except CalledProcessError as e:
                             if gdrive.verbose:
                                 sys.stdout.write("unable to tar directory=%s Error='%s'\n" % (directory, e.stderr.decode()))
