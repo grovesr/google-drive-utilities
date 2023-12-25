@@ -173,12 +173,14 @@ USAGE
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
         parser.add_argument(dest="settingsfile", help="settings file containing connection information [default: %(default)s]", default="./settings.json")
         parser.add_argument("-b", "--backupfolder", dest="backupfolder", help="Folder under My Drive to upload the zippped file [default: %(default)s]", default="/Backup")
+        parser.add_argument("-e", "--excludefolder", dest="excludefolders", action="append", help="exclude this directory from the gzipped directory [default: %(default)s]", default=None)
         parser.add_argument(dest="directories", help="space separated list of directories to zip & upload to drive", nargs='+')
 
         # Process arguments
         args = parser.parse_args()
         settingsfile = args.settingsfile
         backupfolder = args.backupfolder
+        excludefolders = args.excludefolders
         directories = args.directories
         if len(settingsfile) > 0:
             try:
@@ -208,17 +210,22 @@ USAGE
                     backuproot =  directory.replace(os.path.sep,'_')[1:]
                     utcnow = datetime.utcnow().isoformat()
                     backupfile = "%s%s%s.%s.tgz" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat().replace(':', '.'))
+                    tarargs = ['tar']
+                    if excludefolders is not None:
+                        for excludefolder in excludefolders:
+                            tarargs.extend(['--exclude', excludefolder])
+                    tarargs.extend(["-czf", backupfile,"--directory", parentname, dirname])
+                    tarcommand = ' '.join(tarargs)
                     if verbose:
-                        tarcommand = "tar -czf %s --directory %s %s" % (backupfile, parentname, dirname)
                         sys.stdout.write("Taring and gzipping %s to %s\n" % (directory, backupfile))
                         sys.stdout.write("using command: %s\n" % tarcommand)
                     try:
-                        run(["tar", "-czf", backupfile,"--directory", parentname, dirname], stderr=PIPE, check=True)
+                        run(tarargs, stderr=PIPE, check=True)
                     except CalledProcessError as e:
                         # try again after a 5 second delay
                         time.sleep(5)
                         try:
-                            run(["tar", "-czf", backupfile,"--directory", parentname, dirname], stderr=PIPE, check=True)
+                            run(["tar", exclude, "-czf", backupfile,"--directory", parentname, dirname], stderr=PIPE, check=True)
                         except CalledProcessError as e:
                             if gdrive.verbose:
                                 sys.stdout.write("unable to tar directory=%s Error='%s'\n" % (directory, e.stderr.decode()))
