@@ -26,6 +26,7 @@ from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from subprocess import run, PIPE, CalledProcessError, DEVNULL
 from logging.handlers import SMTPHandler
 
 __version__ = 0.1
@@ -172,6 +173,7 @@ example call: python3 get_auth_token.py settings.json
         tokenfile = "%s/%s" % (privatedir, get_secret(settings, "google_tokenfile"))
         scopes = get_secret(settings, "scopes")
         verbose = get_secret(settings, "verbose")
+        ftpbatch = "%s/%s" %(privatedir, 'ftpbatch.txt')
         logger = setup_logging(settings)
         try:
             flow = InstalledAppFlow.from_client_secrets_file(
@@ -190,7 +192,14 @@ example call: python3 get_auth_token.py settings.json
                     raise GoogleDriveException(msg)
             with tokenpath.open(mode="w") as f:
                 f.write(credentials.to_json())
-            tokenpath.chmod(0o644)            
+            tokenpath.chmod(0o644)   
+            sftpargs = ['sftp', '-P', '7822', 'robsapps@robsapps.a2hosted.com']
+            try:
+                with open(ftpbatch, 'r') as batchfile:
+                    run(sftpargs, 
+                        stdin=batchfile, stdout=DEVNULL, stderr=PIPE, check=True)
+            except CalledProcessError as e:
+                raise (e)
         except GoogleDriveException as e:
             if verbose:
                 msg = ("Unable to generate acces token: %s" % str(e))
