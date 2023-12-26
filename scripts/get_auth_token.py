@@ -202,7 +202,7 @@ example call: python3 get_auth_token.py settings.json
                 raise (e)
         except GoogleDriveException as e:
             if verbose:
-                msg = ("Unable to generate acces token: %s" % str(e))
+                msg = ("Unable to generate access token: %s" % str(e))
                 sys.stderr.write("%s\n" % msg)
             else:
                 logger.error(msg)
