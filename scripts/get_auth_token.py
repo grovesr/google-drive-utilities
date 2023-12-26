@@ -170,7 +170,8 @@ example call: python3 get_auth_token.py settings.json
                 return 2
         privatedir = get_secret(settings, "privatedir")
         keyfile = "%s/%s" % (privatedir, get_secret(settings, "google_keyfile"))
-        tokenfile = "%s/%s" % (privatedir, get_secret(settings, "google_tokenfile"))
+        tfile = get_secret(settings, "google_tokenfile")
+        tokenfile = "%s/%s" % (privatedir, tfile)
         scopes = get_secret(settings, "scopes")
         verbose = get_secret(settings, "verbose")
         ftpbatch = "%s/%s" %(privatedir, 'ftpbatch.txt')
@@ -195,9 +196,12 @@ example call: python3 get_auth_token.py settings.json
             tokenpath.chmod(0o644)   
             sftpargs = ['sftp', '-P', '7822', 'robsapps@robsapps.a2hosted.com']
             try:
+                with open(ftpbatch, 'w') as batchfile:
+                    batchfile.write("put %s /home/robsapps/.private" % tokenfile)
                 with open(ftpbatch, 'r') as batchfile:
                     run(sftpargs, 
                         stdin=batchfile, stdout=DEVNULL, stderr=PIPE, check=True)
+                os.remove(ftpbatch)
             except CalledProcessError as e:
                 raise (e)
         except GoogleDriveException as e:
