@@ -17,6 +17,7 @@ import os
 import json
 import logging
 import glob
+import re
 sys.path.insert(0, os.path.expanduser("~/git/google-drive-utilities/google_drive_utilities"))
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
@@ -196,6 +197,11 @@ USAGE
         scopes = get_secret(settings, "scopes")
         verbose = get_secret(settings, "verbose")
         setup_logging(settings)
+        excludestring = ''
+        if excludefolders is not None:
+            excludestring = '_excl_'
+            for excludefolder in excludefolders:
+                excludestring = excludestring + re.sub('[\*\[\]\-/]', '_', excludefolder)
         directories = args.directories
         try:
             gdrive = GoogleDrive(keyfile, tokenfile, scopes, verbose=DEBUG)
@@ -207,7 +213,7 @@ USAGE
                 parentname = str(path.parent.absolute())
                 dirname = path.parts[-1]
                 if os.path.exists(directory):
-                    backuproot =  directory.replace(os.path.sep,'_')[1:]
+                    backuproot =  directory.replace(os.path.sep,'_')[1:] + excludestring
                     utcnow = datetime.utcnow().isoformat()
                     backupfile = "%s%s%s.%s.tgz" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat().replace(':', '.'))
                     tarargs = ['tar']
