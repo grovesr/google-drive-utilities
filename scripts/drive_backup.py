@@ -94,7 +94,7 @@ def setup_logging(settings):
             sys.stderr.write(database_secretfile + "\n")
         else:
             logger.error("Secrets %s not found" % database_secretfile)
-    emailSubject = "drive_backup.py google_drive API access problem!!!"
+    emailSubject = "drive_backup.py google_drive API Information!!!"
     emailHost = get_secret(secrets, "EMAIL_HOST")
     emailUser = get_secret(secrets, "EMAIL_USER")
     emailPort = get_secret(secrets, "EMAIL_PORT")
@@ -116,7 +116,7 @@ def setup_logging(settings):
                                   emailSubject,
                                   credentials=(emailUser, emailPassword,),
                                   secure=isSecure)
-        smtpHandler.setLevel(logging.ERROR)
+        smtpHandler.setLevel(logging.INFO)
         logger.addHandler(smtpHandler)
     if testlog:
         logger.info("Test of logging capabilities for info messages")
