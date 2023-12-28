@@ -248,7 +248,7 @@ class GoogleDrive(object):
                     sys.stdout.write("Uploaded %d%%.\r" % int(status.progress() * 100))
                     sys.stdout.flush()
             if verbose:
-                sys.stdout.write("Uploaded 100%\n")
+                sys.stdout.write("Uploaded 100%% of file %s\n" % filename)
             #file = self.service.files().create(body=file_metadata, media_body=media, fields='name,id,size,parents').execute()
         except HttpError as e:
             msg = "unable to upload file %s: %s" % (filename, e.reason)
