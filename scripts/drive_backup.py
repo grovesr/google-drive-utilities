@@ -197,11 +197,12 @@ USAGE
         scopes = get_secret(settings, "scopes")
         verbose = get_secret(settings, "verbose")
         setup_logging(settings)
-        excludestring = ''
+        excludestring = '_excl_'
         if excludefolders is not None:
-            excludestring = '_excl_'
             for excludefolder in excludefolders:
                 excludestring = excludestring + re.sub('[\*\[\]\-/]', '_', excludefolder)
+        else:
+            excludestring = excludestring + "none"
         directories = args.directories
         try:
             gdrive = GoogleDrive(keyfile, tokenfile, scopes, verbose=DEBUG)
@@ -257,9 +258,8 @@ USAGE
                     for file in oldfiles:
                         gdrive.delete_file_id(fileid=file.get('id'))
                         if verbose:
-                            if verbose:
-                                pathlist, thispath = gdrive.get_path(file=file)
-                                sys.stdout.write("removing %s from Google Drive\n" % thispath)
+                            pathlist, thispath = gdrive.get_path(file=file)
+                            sys.stdout.write("removing %s from Google Drive\n" % thispath)
                 else:
                     if verbose:
                         sys.stdout.write("directory %s doesn't exist. Ignoring\n" % directory)
