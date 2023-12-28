@@ -239,7 +239,7 @@ USAGE
                             else:
                                 logger.error("unable to tar directory=%s Error='%s'" % (directory, e.stderr.decode()))
                             continue
-                    uploadedpath, uploadedid, uploadedfile = gdrive.upload_file_to_path(filename=backupfile, parentpath=backupfolder) 
+                    uploadedpath, uploadedid, uploadedfile = gdrive.upload_file_to_path(filename=backupfile, parentpath=backupfolder, verbose=DEBUG) 
                     if uploadedid is not None:
                         successful.append(directory + (" (filename=%s, size=%s)" % (uploadedpath, uploadedfile.get("size"))))
                     for rmfile in glob.glob("%s*" % os.path.join('/tmp', backuproot)):
@@ -254,11 +254,11 @@ USAGE
                             else:
                                 logger.error("unable to remove %s, Error='%s'" % (fileToRemove, e.stderr.decode()))
                             continue
-                    oldpaths, oldids, oldfiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s'" % (utcnow, backuproot))
+                    oldpaths, oldids, oldfiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s'" % (utcnow, backuproot), verbose=DEBUG)
                     for file in oldfiles:
-                        gdrive.delete_file_id(fileid=file.get('id'))
+                        gdrive.delete_file_id(fileid=file.get('id'), verbose=DEBUG)
                         if verbose:
-                            pathlist, thispath = gdrive.get_path(file=file)
+                            pathlist, thispath = gdrive.get_path(file=file, verbose=DEBUG)
                             sys.stdout.write("removing %s from Google Drive\n" % thispath)
                 else:
                     if verbose:

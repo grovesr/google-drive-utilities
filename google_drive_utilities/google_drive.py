@@ -14,6 +14,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 from googleapiclient.errors import HttpError
+from pickle import NONE
 
 class GoogleDriveException(Exception):
     '''Generic exception to raise GoogleDrive errors.'''
@@ -205,7 +206,7 @@ class GoogleDrive(object):
             raise GoogleDriveException(msg)
         return path, fileid, file
 
-    def upload_file_to_path(self, filename='', parentpath='', verbose=False, allowduplicate=False):
+    def upload_file_to_path(self, filename='', parentpath='', verbose=False, allowduplicate=False, chunk=16):
         """Uploads the file to the specified folder id on the said Google Drive
         Returns:
                 file resource
@@ -231,7 +232,7 @@ class GoogleDrive(object):
               'parents': parentids
         }
         try:
-            media = MediaFileUpload(filename, resumable=True)
+            media = MediaFileUpload(filename, resumable=True, chunksize=chunk*1024*1024)
         except FileNotFoundError :
             msg="Unable to find file '%s' to upload" % filename
             if verbose:
@@ -239,7 +240,16 @@ class GoogleDrive(object):
             raise GoogleDriveException(msg)
                 
         try:
-            file = self.service.files().create(body=file_metadata, media_body=media, fields='name,id,size,parents').execute()
+            request = self.service.files().create(body=file_metadata, media_body=media, fields='name,id,size,parents')
+            file = None
+            while file is None:
+                status, file = request.next_chunk()
+                if verbose and status is not None:
+                    sys.stdout.write("Uploaded %d%%.\r" % int(status.progress() * 100))
+                    sys.stdout.flush()
+            if verbose:
+                sys.stdout.write("Uploaded 100%\n")
+            #file = self.service.files().create(body=file_metadata, media_body=media, fields='name,id,size,parents').execute()
         except HttpError as e:
             msg = "unable to upload file %s: %s" % (filename, e.reason)
             if verbose:
