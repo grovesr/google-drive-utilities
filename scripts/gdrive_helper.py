@@ -25,7 +25,7 @@ from logging.handlers import SMTPHandler
 __version__ = 0.1
 __date__ = '2024-01-01'
 __updated__ = '2024-01-01'
-DEBUG = 0
+
 TESTRUN = 0
 PROFILE = 0
 
@@ -149,6 +149,7 @@ example call: python3 gdrive_helper.py settings.json -q="name contains 'Getting'
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
         parser.add_argument(dest="settingsfile", help="settings file containing connection information [default: %(default)s]", default="./settings.json")
         parser.add_argument("-q", "--query", dest="query", help="query to use when listing Google Drive [default: %(default)s]", default = None)
+        parser.add_argument("-d", "--debug", dest="DEBUG", action="store_true", help="print out debuggung info [default: %(default)s]", default=False)
         parser.add_argument("--filterfilepath", dest="filterfilepath", help="use regex to filter files in a folder path from Google Drive [default: %(default)s]", default = None)
         parser.add_argument("--downloadfiles", dest="downloadfiles", action='store_true', help="download specified in the query or querypath from Google Drive [default: %(default)s]", default = False)
         parser.add_argument("--deletefilepath", dest="deletefilepath", help="delete queried file (includes path to file) from Google Drive [default: %(default)s]", default = None)
@@ -161,6 +162,7 @@ example call: python3 gdrive_helper.py settings.json -q="name contains 'Getting'
         # Process arguments
         args = parser.parse_args()
         query = args.query
+        DEBUG = args.DEBUG
         deletefilepath = args.deletefilepath
         filterfilepath = args.filterfilepath
         deletefileid = args.deletefileid

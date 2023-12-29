@@ -32,7 +32,7 @@ from logging.handlers import SMTPHandler
 __version__ = 0.1
 __date__ = '2024-01-01'
 __updated__ = '2024-01-01'
-DEBUG = 0
+
 TESTRUN = 0
 
 class CLIError(Exception):
@@ -153,10 +153,12 @@ example call: python3 get_auth_token.py settings.json
     try:
         # Setup argument parser
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
+        parser.add_argument("-d", "--debug", dest="DEBUG", action="store_true", help="print out debuggung info [default: %(default)s]", default=False)
         parser.add_argument(dest="settingsfile", help="settings file containing connection information [default: %(default)s]", default="./settings.json")
 
         # Process arguments
         args = parser.parse_args()
+        DEBUG = args.DEBUG
         settingsfile = args.settingsfile
         settings = {}
         

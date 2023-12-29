@@ -206,7 +206,7 @@ class GoogleDrive(object):
             raise GoogleDriveException(msg)
         return path, fileid, file
 
-    def upload_file_to_path(self, filename='', parentpath='', verbose=False, allowduplicate=False, chunk=16):
+    def upload_file_to_path(self, filename='', parentpath='', verbose=False, allowduplicate=False, chunk=16, checksum=None):
         """Uploads the file to the specified folder id on the said Google Drive
         Returns:
                 file resource
@@ -231,6 +231,8 @@ class GoogleDrive(object):
               'name' : os.path.basename(filename),
               'parents': parentids
         }
+        if checksum is not None:
+            file_metadata['properties'] = { 'checksum': checksum}
         try:
             media = MediaFileUpload(filename, resumable=True, chunksize=chunk*1024*1024)
         except FileNotFoundError :
@@ -303,7 +305,7 @@ class GoogleDrive(object):
             sys.stdout.write("Download Complete!\n")
         return newname + ext, fileid, file
 
-    def list_files_in_drive(self, query=None, pathquery=None, fields="files(id,name,size,modifiedTime,parents)", includetrashed=False, verbose=False):
+    def list_files_in_drive(self, query=None, pathquery=None, fields="files(id,name,size,modifiedTime,parents,properties)", includetrashed=False, verbose=False):
         """Queries Google Drive for all files satisfying query
         Returns:
                 list of file resources

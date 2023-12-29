@@ -28,13 +28,13 @@ import time
 from datetime import datetime
 from subprocess import run, PIPE, CalledProcessError
 from pathlib import Path
+from hashlib import md5
 
 logger = logging.getLogger(__name__)
 
 __version__ = 0.1
 __date__ = '2024-01-01'
 __updated__ = '2024-01-01'
-DEBUG = 0
 TESTRUN = 0
 PROFILE = 0
 
@@ -77,7 +77,7 @@ def setup_logging(settings):
     verbose = get_secret(settings, "verbose")
     privatedir = get_secret(settings, "privatedir")
     logging.basicConfig(filename=logfile,
-                        format='%(levelname)s:%(asctime)s %(message)s',
+                        format='%(levelname)s - %(asctime)s - %(filename)s - %(message)s',
                         level=logging.INFO)
     logging.getLogger('googleapiclient').setLevel(logging.ERROR)
     logging.getLogger('google').setLevel(logging.ERROR)
@@ -174,6 +174,7 @@ USAGE
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
         parser.add_argument(dest="settingsfile", help="settings file containing connection information [default: %(default)s]", default="./settings.json")
         parser.add_argument("-b", "--backupfolder", dest="backupfolder", help="Folder under My Drive to upload the zippped file [default: %(default)s]", default="/Backup")
+        parser.add_argument("-d", "--debug", dest="DEBUG", action="store_true", help="print out debuggung info [default: %(default)s]", default=False)
         parser.add_argument("-e", "--excludefolder", dest="excludefolders", action="append", help="exclude this directory from the gzipped directory [default: %(default)s]", default=None)
         parser.add_argument(dest="directories", help="space separated list of directories to zip & upload to drive", nargs='+')
 
@@ -182,6 +183,7 @@ USAGE
         settingsfile = args.settingsfile
         backupfolder = args.backupfolder
         excludefolders = args.excludefolders
+        DEBUG = args.DEBUG
         directories = args.directories
         if len(settingsfile) > 0:
             try:
@@ -208,6 +210,7 @@ USAGE
             gdrive = GoogleDrive(keyfile, tokenfile, scopes, verbose=DEBUG)
             backupfolderpath, backupfolderid, backupfolderfile = gdrive.create_folder_path(backupfolder)
             successful = []
+            exists = []
             for directory in directories:
                 directory = os.path.expanduser(directory)
                 path = Path(directory)
@@ -239,9 +242,26 @@ USAGE
                             else:
                                 logger.error("unable to tar directory=%s Error='%s'" % (directory, e.stderr.decode()))
                             continue
-                    uploadedpath, uploadedid, uploadedfile = gdrive.upload_file_to_path(filename=backupfile, parentpath=backupfolder, verbose=DEBUG) 
-                    if uploadedid is not None:
-                        successful.append(directory + (" (filename=%s, size=%s)" % (uploadedpath, uploadedfile.get("size"))))
+    
+                    checksum = md5();
+                    with open(backupfile, 'rb') as f:
+                        for chunk in iter(lambda: f.read(4096), b''):
+                            checksum.update(chunk)
+                    checksum = checksum.hexdigest()
+                    # check to see if this file already exists on Drive, if so check its checksum
+                    oldpaths, oldids, oldfiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s'" % (utcnow, backuproot), verbose=DEBUG)
+                    fileexists = False
+                    for file in oldfiles:
+                        properties = file.get('properties', None)
+                        if properties is not None:
+                            oldchecksum = properties.get('checksum', None)
+                            if oldchecksum is not None and oldchecksum == checksum:
+                                fileexists = True
+                                exists.append("filename=%s/%s already exists and is identical" % (backupfolder, file.get("name")))
+                    if not fileexists:
+                        uploadedpath, uploadedid, uploadedfile = gdrive.upload_file_to_path(filename=backupfile, parentpath=backupfolder, checksum=checksum, verbose=DEBUG) 
+                        if uploadedid is not None:
+                            successful.append(directory + (" (filename=%s, size=%s)" % (uploadedpath, uploadedfile.get("size"))))
                     for rmfile in glob.glob("%s*" % os.path.join('/tmp', backuproot)):
                         fileToRemove = os.path.join('/tmp', rmfile)
                         try:
@@ -254,21 +274,28 @@ USAGE
                             else:
                                 logger.error("unable to remove %s, Error='%s'" % (fileToRemove, e.stderr.decode()))
                             continue
-                    oldpaths, oldids, oldfiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s'" % (utcnow, backuproot), verbose=DEBUG)
-                    for file in oldfiles:
-                        gdrive.delete_file_id(fileid=file.get('id'), verbose=DEBUG)
-                        if verbose:
-                            pathlist, thispath = gdrive.get_path(file=file, verbose=DEBUG)
-                            sys.stdout.write("removing %s from Google Drive\n" % thispath)
+                    if not fileexists:
+                        oldpaths, oldids, oldfiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s'" % (utcnow, backuproot), verbose=DEBUG)
+                        for file in oldfiles:
+                            gdrive.delete_file_id(fileid=file.get('id'), verbose=DEBUG)
+                            if verbose:
+                                pathlist, thispath = gdrive.get_path(file=file, verbose=DEBUG)
+                                sys.stdout.write("removing %s from Google Drive\n" % thispath)
                 else:
                     if verbose:
                         sys.stdout.write("directory %s doesn't exist. Ignoring\n" % directory)
                     else:
                         logger.info("directory %s doesn't exist. Ignoring" % directory)
             if verbose:
-                sys.stdout.write("Uploaded the following directories to Google Drive: %s\n" % str(successful))
+                if len(successful) > 0:
+                    sys.stdout.write("Uploaded the following directories to Google Drive: %s\n" % str(successful))
+                if len(exists) > 0:
+                    sys.stdout.write("The following files already exist on Google Drive: %s" % str(exists))
             else:
-                logger.info("Uploaded the following directories to Google Drive: %s" % str(successful))
+                if len(successful) > 0:
+                    logger.info("Uploaded the following directories to Google Drive: %s" % str(successful))
+                if len(exists) > 0:
+                    logger.info("The following files already exist on Google Drive: %s" % str(exists))
             return 0
         except GoogleDriveException as e:
             msg = "Problem accessing Google Drive API: %s" % str(e)
