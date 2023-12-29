@@ -339,7 +339,7 @@ class GoogleDrive(object):
                 files.append(file)
         return paths, ids, files
     
-    def filter_filepath_in_drive(self, pathquery=None, fields="files(id,name,size,modifiedTime,parents)", includetrashed=False, verbose=False):
+    def filter_filepath_in_drive(self, pathquery=None, fields="files(id,name,size,modifiedTime,parents,properties)", includetrashed=False, verbose=False):
         """Queries Google Drive for all files satisfying query
         Returns:
                 list of file resources
@@ -348,6 +348,8 @@ class GoogleDrive(object):
             raise GoogleDriveException("You must specify a pathquery")
         if self.service is None:
             raise GoogleDriveException("GoogleDrive object not initialized yet")
+        if pathquery[0] != '/':
+            pathquery = '/' + pathquery
         m=re.match("(^/.*?)/?([^/]*?$)",pathquery)
         if m.groups() is None:
             raise GoogleDriveException("unable to parse the filepath [%s] with regex %s" % pathquery)

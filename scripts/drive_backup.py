@@ -255,6 +255,8 @@ USAGE
                         properties = file.get('properties', None)
                         if properties is not None:
                             oldchecksum = properties.get('checksum', None)
+                            if oldchecksum is not None and verbose:
+                                sys.stdout.write("new checksum=%s, drive checksum=%s" % (checksum, oldchecksum))
                             if oldchecksum is not None and oldchecksum == checksum:
                                 fileexists = True
                                 exists.append("filename=%s/%s already exists and is identical" % (backupfolder, file.get("name")))
