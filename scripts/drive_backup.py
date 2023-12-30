@@ -219,7 +219,7 @@ USAGE
                 if os.path.exists(directory):
                     backuproot =  directory.replace(os.path.sep,'_')[1:] + excludestring
                     utcnow = datetime.utcnow().isoformat()
-                    backupfile = "%s%s%s.%s.tgz" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat().replace(':', '.'))
+                    backupfile = "%s%s%s.%s.tar" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat().replace(':', '.'))
                     tarargs = ['tar']
                     if excludefolders is not None:
                         for excludefolder in excludefolders:
