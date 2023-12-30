@@ -256,7 +256,7 @@ USAGE
                         if properties is not None:
                             oldchecksum = properties.get('checksum', None)
                             if oldchecksum is not None and verbose:
-                                sys.stdout.write("new checksum=%s, drive checksum=%s" % (checksum, oldchecksum))
+                                sys.stdout.write("new checksum=%s, drive checksum=%s\n" % (checksum, oldchecksum))
                             if oldchecksum is not None and oldchecksum == checksum:
                                 fileexists = True
                                 exists.append("filename=%s/%s already exists and is identical" % (backupfolder, file.get("name")))
@@ -292,7 +292,7 @@ USAGE
                 if len(successful) > 0:
                     sys.stdout.write("Uploaded the following directories to Google Drive: %s\n" % str(successful))
                 if len(exists) > 0:
-                    sys.stdout.write("The following files already exist on Google Drive: %s" % str(exists))
+                    sys.stdout.write("The following files already exist on Google Drive: %s\n" % str(exists))
             else:
                 if len(successful) > 0:
                     logger.info("Uploaded the following directories to Google Drive: %s" % str(successful))
