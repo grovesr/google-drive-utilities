@@ -224,7 +224,7 @@ USAGE
                     if excludefolders is not None:
                         for excludefolder in excludefolders:
                             tarargs.extend(['--exclude', excludefolder])
-                    tarargs.extend(["-czf", backupfile,"--directory", parentname, dirname])
+                    tarargs.extend(["-cf", backupfile,"--directory", parentname, dirname])
                     tarcommand = ' '.join(tarargs)
                     if verbose:
                         sys.stdout.write("Taring and gzipping %s to %s\n" % (directory, backupfile))
