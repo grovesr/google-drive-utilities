@@ -285,7 +285,8 @@ USAGE
                         oldfiles.reverse()
                         indx = 1
                         for file in oldfiles:
-                            if indx >= keepfiles:
+                            if indx >= keepfiles and backuproot in file.get('name'):
+                                # double check the name comparison here
                                 gdrive.delete_file_id(fileid=file.get('id'), verbose=DEBUG)
                                 if verbose:
                                     pathlist, thispath = gdrive.get_path(file=file, verbose=DEBUG)
