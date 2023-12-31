@@ -291,7 +291,8 @@ USAGE
                                 if verbose:
                                     pathlist, thispath = gdrive.get_path(file=file, verbose=DEBUG)
                                     sys.stdout.write("removing %s from Google Drive\n" % thispath)
-                            indx = indx + 1
+                            if backuproot in file.get('name'):
+                                indx = indx + 1
                 else:
                     if verbose:
                         sys.stdout.write("directory %s doesn't exist. Ignoring\n" % directory)
