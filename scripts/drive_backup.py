@@ -174,6 +174,7 @@ USAGE
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
         parser.add_argument(dest="settingsfile", help="settings file containing connection information [default: %(default)s]", default="./settings.json")
         parser.add_argument("-b", "--backupfolder", dest="backupfolder", help="Folder under My Drive to upload the zippped file [default: %(default)s]", default="/Backup")
+        parser.add_argument("-k", "--keepfiles", dest="keepfiles", type=int, help="Keep this number of unique files in drive. delete older files if necessary. [default: %(default)s]", default=1)
         parser.add_argument("-d", "--debug", dest="DEBUG", action="store_true", help="print out debuggung info [default: %(default)s]", default=False)
         parser.add_argument("-e", "--excludefolder", dest="excludefolders", action="append", help="exclude this directory from the gzipped directory [default: %(default)s]", default=None)
         parser.add_argument(dest="directories", help="space separated list of directories to zip & upload to drive", nargs='+')
@@ -182,6 +183,7 @@ USAGE
         args = parser.parse_args()
         settingsfile = args.settingsfile
         backupfolder = args.backupfolder
+        keepfiles = args.keepfiles
         excludefolders = args.excludefolders
         DEBUG = args.DEBUG
         directories = args.directories
@@ -219,15 +221,16 @@ USAGE
                 if os.path.exists(directory):
                     backuproot =  directory.replace(os.path.sep,'_')[1:] + excludestring
                     utcnow = datetime.utcnow().isoformat()
-                    backupfile = "%s%s%s.%s.tar" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat().replace(':', '.'))
+                    backupfile = "%s%s%s.%s.tgz" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat().replace(':', '.'))
                     tarargs = ['tar']
                     if excludefolders is not None:
                         for excludefolder in excludefolders:
                             tarargs.extend(['--exclude', excludefolder])
-                    tarargs.extend(["-cf", backupfile,"--directory", parentname, dirname])
+                    # use ustar format to ensure we don't change checksum for changed file attributes that don't change file contents 
+                    tarargs.extend(["--format", "ustar", "-czf", backupfile,"--directory", parentname, dirname])
                     tarcommand = ' '.join(tarargs)
                     if verbose:
-                        sys.stdout.write("Taring and gzipping %s to %s\n" % (directory, backupfile))
+                        sys.stdout.write("Taring %s to %s\n" % (directory, backupfile))
                         sys.stdout.write("using command: %s\n" % tarcommand)
                     try:
                         run(tarargs, stderr=PIPE, check=True)
@@ -257,9 +260,10 @@ USAGE
                             oldchecksum = properties.get('checksum', None)
                             if oldchecksum is not None and verbose:
                                 sys.stdout.write("new checksum=%s, drive checksum=%s\n" % (checksum, oldchecksum))
-                            if oldchecksum is not None and oldchecksum == checksum:
-                                fileexists = True
-                                exists.append("filename=%s/%s already exists and is identical" % (backupfolder, file.get("name")))
+                                if oldchecksum == checksum:
+                                    fileexists = True
+                                    exists.append("filename=%s/%s already exists and is identical" % (backupfolder, file.get("name")))
+                                    break
                     if not fileexists:
                         uploadedpath, uploadedid, uploadedfile = gdrive.upload_file_to_path(filename=backupfile, parentpath=backupfolder, checksum=checksum, verbose=DEBUG) 
                         if uploadedid is not None:
@@ -277,12 +281,16 @@ USAGE
                                 logger.error("unable to remove %s, Error='%s'" % (fileToRemove, e.stderr.decode()))
                             continue
                     if not fileexists:
-                        oldpaths, oldids, oldfiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s'" % (utcnow, backuproot), verbose=DEBUG)
+                        oldpaths, oldids, oldfiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s'" % (utcnow, backuproot), verbose=DEBUG, orderBy='modifiedTime')
+                        oldfiles.reverse()
+                        indx = 1
                         for file in oldfiles:
-                            gdrive.delete_file_id(fileid=file.get('id'), verbose=DEBUG)
-                            if verbose:
-                                pathlist, thispath = gdrive.get_path(file=file, verbose=DEBUG)
-                                sys.stdout.write("removing %s from Google Drive\n" % thispath)
+                            if indx >= keepfiles:
+                                gdrive.delete_file_id(fileid=file.get('id'), verbose=DEBUG)
+                                if verbose:
+                                    pathlist, thispath = gdrive.get_path(file=file, verbose=DEBUG)
+                                    sys.stdout.write("removing %s from Google Drive\n" % thispath)
+                            indx = indx + 1
                 else:
                     if verbose:
                         sys.stdout.write("directory %s doesn't exist. Ignoring\n" % directory)

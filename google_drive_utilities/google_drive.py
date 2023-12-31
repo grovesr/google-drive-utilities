@@ -305,7 +305,7 @@ class GoogleDrive(object):
             sys.stdout.write("Download Complete!\n")
         return newname + ext, fileid, file
 
-    def list_files_in_drive(self, query=None, pathquery=None, fields="files(id,name,size,modifiedTime,parents,properties)", includetrashed=False, verbose=False):
+    def list_files_in_drive(self, query=None, pathquery=None, fields="files(id,name,size,modifiedTime,parents,properties)", includetrashed=False, verbose=False, orderBy=None):
         """Queries Google Drive for all files satisfying query
         Returns:
                 list of file resources
@@ -321,7 +321,7 @@ class GoogleDrive(object):
             raise GoogleDriveException("GoogleDrive object not initialized yet")
         try:
             if len(query) > 0:
-                files= self.service.files().list(q=query, fields=fields).execute()
+                files= self.service.files().list(q=query, fields=fields, orderBy=orderBy).execute()
         except HttpError as e:
             msg = "unable to list files from query '%s': %s" %(query, e.reason)
             if verbose:
