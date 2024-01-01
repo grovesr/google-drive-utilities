@@ -204,7 +204,7 @@ USAGE
         excludestring = '_excl_'
         if excludefolders is not None:
             for excludefolder in excludefolders:
-                excludestring = excludestring + re.sub('[\*\[\]\-/]', '_', excludefolder)
+                excludestring = excludestring + re.sub('[\*\[\]\-/]', '_', excludefolder)[1:]
         else:
             excludestring = excludestring + "none"
         directories = args.directories
@@ -219,69 +219,86 @@ USAGE
                 parentname = str(path.parent.absolute())
                 dirname = path.parts[-1]
                 if os.path.exists(directory):
-                    backuproot =  directory.replace(os.path.sep,'_')[1:] + excludestring
-                    utcnow = datetime.utcnow().isoformat()
-                    backupfile = "%s%s%s.%s.tgz" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat().replace(':', '.'))
-                    tarargs = ['tar']
+                    md5args = ['find',directory]
                     if excludefolders is not None:
                         for excludefolder in excludefolders:
-                            tarargs.extend(['--exclude', excludefolder])
-                    # use ustar format to ensure we don't change checksum for changed file attributes that don't change file contents 
-                    tarargs.extend(["--format", "ustar", "-czf", backupfile,"--directory", parentname, dirname])
-                    tarcommand = ' '.join(tarargs)
+                            md5args.extend(["-not", "-path", "%s/*" % excludefolder])
+                    md5args.extend(['-type', 'f'])
+                    md5command = ' '.join(md5args)
+                    md5command = "%s | sort | xargs -n 1 md5sum | md5sum" % md5command
                     if verbose:
-                        sys.stdout.write("Taring %s to %s\n" % (directory, backupfile))
-                        sys.stdout.write("using command: %s\n" % tarcommand)
+                        sys.stdout.write("Checking md5sum of %s\n" % (directory))
+                        sys.stdout.write("using command: %s\n" % md5command)
                     try:
-                        run(tarargs, stderr=PIPE, check=True)
+                        p1 = run(md5args, stdout=PIPE, check=True)
+                        p2 = run(['sort'], input=p1.stdout, stdout=PIPE, check=True)
+                        p3 = run(['xargs', '-n', '1', 'md5sum'], input=p2.stdout, stdout=PIPE, check=True)
+                        p4 = run(['md5sum'], input = p3.stdout, stdout=PIPE, check=True)
+                        checksum = p4.stdout.strip().decode("utf-8")
                     except CalledProcessError as e:
-                        # try again after a 5 second delay
-                        time.sleep(5)
-                        try:
-                            run(tarargs, stderr=PIPE, check=True)
-                        except CalledProcessError as e:
-                            if gdrive.verbose:
-                                sys.stdout.write("unable to tar directory=%s Error='%s'\n" % (directory, e.stderr.decode()))
-                            else:
-                                logger.error("unable to tar directory=%s Error='%s'" % (directory, e.stderr.decode()))
-                            continue
-    
-                    checksum = md5();
-                    with open(backupfile, 'rb') as f:
-                        for chunk in iter(lambda: f.read(4096), b''):
-                            checksum.update(chunk)
-                    checksum = checksum.hexdigest()
+                        if gdrive.verbose:
+                            sys.stdout.write("unable to run md5sum on directory=%s Error='%s'\n" % (directory, e.stderr.decode()))
+                        else:
+                            logger.error("unable to run md5sum on  directory=%s Error='%s'" % (directory, e.stderr.decode()))
+                        continue
+                    
+                    backuproot =  directory.replace(os.path.sep,'_')[1:] + excludestring.replace(re.sub('[\-/]','_',parentname), '').replace('__','_')
+                    utcnow = datetime.utcnow().isoformat()
                     # check to see if this file already exists on Drive, if so check its checksum
                     oldpaths, oldids, oldfiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s'" % (utcnow, backuproot), verbose=DEBUG)
                     fileexists = False
                     for file in oldfiles:
-                        properties = file.get('properties', None)
-                        if properties is not None:
-                            oldchecksum = properties.get('checksum', None)
-                            if oldchecksum is not None and verbose:
-                                sys.stdout.write("new checksum=%s, drive checksum=%s\n" % (checksum, oldchecksum))
-                                if oldchecksum == checksum:
-                                    fileexists = True
-                                    exists.append("filename=%s/%s already exists and is identical" % (backupfolder, file.get("name")))
-                                    break
+                        # double check that the file is really a match
+                        if backuproot in file.get("name"):
+                            properties = file.get('properties', None)
+                            if properties is not None:
+                                oldchecksum = properties.get('checksum', None)
+                                if oldchecksum is not None and verbose:
+                                    sys.stdout.write("new checksum=%s, drive checksum=%s\n" % (checksum, oldchecksum))
+                                    if oldchecksum == checksum:
+                                        fileexists = True
+                                        exists.append("filename=%s/%s already exists and is identical" % (backupfolder, file.get("name")))
+                                        break
                     if not fileexists:
+                        backupfile = "%s%s%s.%s.tgz" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat().replace(':', '.'))
+                        tarargs = ['tar']
+                        if excludefolders is not None:
+                            for excludefolder in excludefolders:
+                                tarargs.extend(['--exclude', excludefolder.replace(parentname, '')[1:]])
+                        # use ustar format to ensure we don't change checksum for changed file attributes that don't change file contents 
+                        tarargs.extend(["--format", "ustar", "-czf", backupfile,"--directory", parentname, dirname])
+                        tarcommand = ' '.join(tarargs)
+                        if verbose:
+                            sys.stdout.write("Taring %s to %s\n" % (directory, backupfile))
+                            sys.stdout.write("using command: %s\n" % tarcommand)
+                        try:
+                            run(tarargs, stderr=PIPE, check=True)
+                        except CalledProcessError as e:
+                            # try again after a 5 second delay
+                            time.sleep(5)
+                            try:
+                                run(tarargs, stderr=PIPE, check=True)
+                            except CalledProcessError as e:
+                                if gdrive.verbose:
+                                    sys.stdout.write("unable to tar directory=%s Error='%s'\n" % (directory, e.stderr.decode()))
+                                else:
+                                    logger.error("unable to tar directory=%s Error='%s'" % (directory, e.stderr.decode()))
+                                continue
                         uploadedpath, uploadedid, uploadedfile = gdrive.upload_file_to_path(filename=backupfile, parentpath=backupfolder, checksum=checksum, verbose=DEBUG) 
                         if uploadedid is not None:
                             successful.append(directory + (" (filename=%s, size=%s)" % (uploadedpath, uploadedfile.get("size"))))
-                    for rmfile in glob.glob("%s*" % os.path.join('/tmp', backuproot)):
-                        fileToRemove = os.path.join('/tmp', rmfile)
-                        try:
-                            run(["rm", fileToRemove], stderr=PIPE, check=True)
-                            if verbose:
-                                sys.stdout.write("removing %s from filesystem\n" % fileToRemove)
-                        except CalledProcessError as e:
-                            if verbose:
-                                sys.stdout.write("unable to remove %s, Error='%s'\n" % (fileToRemove, e.stderr.decode()))
-                            else:
-                                logger.error("unable to remove %s, Error='%s'" % (fileToRemove, e.stderr.decode()))
-                            continue
-                    if not fileexists:
-                        oldpaths, oldids, oldfiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s'" % (utcnow, backuproot), verbose=DEBUG, orderBy='modifiedTime')
+                        for rmfile in glob.glob("%s*" % os.path.join('/tmp', backuproot)):
+                            fileToRemove = os.path.join('/tmp', rmfile)
+                            try:
+                                run(["rm", fileToRemove], stderr=PIPE, check=True)
+                                if verbose:
+                                    sys.stdout.write("removing %s from filesystem\n" % fileToRemove)
+                            except CalledProcessError as e:
+                                if verbose:
+                                    sys.stdout.write("unable to remove %s, Error='%s'\n" % (fileToRemove, e.stderr.decode()))
+                                else:
+                                    logger.error("unable to remove %s, Error='%s'" % (fileToRemove, e.stderr.decode()))
+                                continue
                         oldfiles.reverse()
                         indx = 1
                         for file in oldfiles:
