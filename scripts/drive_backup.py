@@ -237,7 +237,7 @@ USAGE
                         p3 = run(['xargs', '-n', '1', 'md5sum'], input=p2.stdout, stdout=PIPE, check=True)
                         utcnow = datetime.utcnow().isoformat()
                         if writemd5dir is not None:
-                            md5file = "%s/%s%s.md5" % (writemd5dir, dirname, excludestring.replace(re.sub('[\-/]','_',parentname), '')) 
+                            md5file = "%s/%s%s.%s.md5" % (writemd5dir, dirname, excludestring.replace(re.sub('[\-/]','_',parentname), ''), utcnow.replace(':', '.')) 
                             with open(md5file, 'w') as f:
                                 f.write(p3.stdout.decode("utf-8"))
                         p4 = run(['md5sum'], input = p3.stdout, stdout=PIPE, check=True)
