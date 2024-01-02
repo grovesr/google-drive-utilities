@@ -177,6 +177,7 @@ USAGE
         parser.add_argument("-k", "--keepfiles", dest="keepfiles", type=int, help="Keep this number of unique files in drive. delete older files if necessary. [default: %(default)s]", default=1)
         parser.add_argument("-d", "--debug", dest="DEBUG", action="store_true", help="print out debuggung info [default: %(default)s]", default=False)
         parser.add_argument("-e", "--excludefolder", dest="excludefolders", action="append", help="exclude this directory from the gzipped directory [default: %(default)s]", default=None)
+        parser.add_argument("-w", "--writemd5dir", dest="writemd5dir", help="Write the md5 results for all files to be backed up to this directory. [default: %(default)s]", default=None)
         parser.add_argument(dest="directories", help="space separated list of directories to zip & upload to drive", nargs='+')
 
         # Process arguments
@@ -185,6 +186,7 @@ USAGE
         backupfolder = args.backupfolder
         keepfiles = args.keepfiles
         excludefolders = args.excludefolders
+        writemd5dir = args.writemd5dir
         DEBUG = args.DEBUG
         directories = args.directories
         if len(settingsfile) > 0:
@@ -233,6 +235,11 @@ USAGE
                         p1 = run(md5args, stdout=PIPE, check=True)
                         p2 = run(['sort'], input=p1.stdout, stdout=PIPE, check=True)
                         p3 = run(['xargs', '-n', '1', 'md5sum'], input=p2.stdout, stdout=PIPE, check=True)
+                        utcnow = datetime.utcnow().isoformat()
+                        if writemd5dir is not None:
+                            md5file = "%s/%s%s.md5" % (writemd5dir, dirname, excludestring.replace(re.sub('[\-/]','_',parentname), '')) 
+                            with open(md5file, 'w') as f:
+                                f.write(p3.stdout.decode("utf-8"))
                         p4 = run(['md5sum'], input = p3.stdout, stdout=PIPE, check=True)
                         checksum = p4.stdout.strip().decode("utf-8")
                     except CalledProcessError as e:
@@ -243,7 +250,6 @@ USAGE
                         continue
                     
                     backuproot =  directory.replace(os.path.sep,'_')[1:] + excludestring.replace(re.sub('[\-/]','_',parentname), '').replace('__','_')
-                    utcnow = datetime.utcnow().isoformat()
                     # check to see if this file already exists on Drive, if so check its checksum
                     oldpaths, oldids, oldfiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s'" % (utcnow, backuproot), verbose=DEBUG)
                     fileexists = False
