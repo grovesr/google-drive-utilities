@@ -261,10 +261,10 @@ USAGE
                                 oldchecksum = properties.get('checksum', None)
                                 if oldchecksum is not None and verbose:
                                     sys.stdout.write("new checksum=%s, drive checksum=%s\n" % (checksum, oldchecksum))
-                                    if oldchecksum == checksum:
-                                        fileexists = True
-                                        exists.append("filename=%s/%s already exists and is identical" % (backupfolder, file.get("name")))
-                                        break
+                                if oldchecksum == checksum:
+                                    fileexists = True
+                                    exists.append("filename=%s/%s already exists and is identical" % (backupfolder, file.get("name")))
+                                    break
                     if not fileexists:
                         backupfile = "%s%s%s.%s.tgz" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat().replace(':', '.'))
                         tarargs = ['tar']
