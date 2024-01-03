@@ -105,7 +105,7 @@ def setup_logging(settings):
         if verbose:
             sys.stdout.write("No admin email specified using --email argument, no email logging enabled.\n")
         else:
-            logger.info("No admin email specified using --email argument, no email logging enabled.")
+            logger.error("No admin email specified using --email argument, no email logging enabled.")
     else:
         isSecure = None
         if emailUseTLS == "True":
@@ -116,10 +116,11 @@ def setup_logging(settings):
                                   emailSubject,
                                   credentials=(emailUser, emailPassword,),
                                   secure=isSecure)
-        smtpHandler.setLevel(logging.INFO)
+        smtpHandler.setLevel(logging.WARN)
         logger.addHandler(smtpHandler)
     if testlog:
         logger.info("Test of logging capabilities for info messages")
+        logger.warning("Test of logging capabilities for warning messages")
         logger.error("Test of logging capabilities for error messages")
         
 def main(argv=None): # IGNORE:C0111
@@ -328,7 +329,7 @@ USAGE
                     sys.stdout.write("The following files already exist on Google Drive: %s\n" % str(exists))
             else:
                 if len(successful) > 0:
-                    logger.info("Uploaded the following directories to Google Drive: %s" % str(successful))
+                    logger.warning("Uploaded the following directories to Google Drive: %s" % str(successful))
                 if len(exists) > 0:
                     logger.info("The following files already exist on Google Drive: %s" % str(exists))
             return 0

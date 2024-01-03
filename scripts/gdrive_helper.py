@@ -97,7 +97,7 @@ def setup_logging(settings):
         if verbose:
             sys.stdout.write("No admin email specified using --email argument, no email logging enabled.\n")
         else:
-            logger.info("No admin email specified using --email argument, no email logging enabled.")
+            logger.error("No admin email specified using --email argument, no email logging enabled.")
     else:
         isSecure = None
         if emailUseTLS == "True":
