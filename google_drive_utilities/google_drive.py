@@ -177,7 +177,7 @@ class GoogleDrive(object):
                 body = {'trashed' : True }
                 file = self.service.files().update(fileId=fileids[0], body=body).execute()
             else:
-                file = self.service.files().get(fileId=fileids[0], fields='name').execute()
+                file = self.service.files().delete(fileId=fileids[0], fields='name').execute()
         except HttpError as e:
             msg = "unable to delete filepath %s. %s" % (path, e.reason)
             raise GoogleDriveException(msg)
@@ -191,16 +191,16 @@ class GoogleDrive(object):
         if self.service is None:
             raise GoogleDriveException("GoogleDrive object not initialized yet")
         try:
+            file = self.service.files().get(fileId=fileid).execute()
+            pathlist, path = self.get_path(file=file)
             if trash:
                 body = {'trashed' : True }
                 file = self.service.files().update(fileId=fileid, body=body).execute()
             else:
-                file = self.service.files().get(fileId=fileid, fields='name').execute()
+                file = self.service.files().delete(fileId=fileid, fields='name').execute()
             if file is None:
                 msg = "unable to find fileid=%s to delete" % fileid
                 raise GoogleDriveException(msg)
-            ids, path = self.get_path(file=file)
-            self.service.files().delete(fileId=fileid).execute()
         except HttpError as e:
             msg = "unable to delete fileid=%s: %s" % (fileid, e.reason)
             raise GoogleDriveException(msg)

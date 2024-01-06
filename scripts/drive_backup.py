@@ -178,7 +178,7 @@ USAGE
         parser.add_argument("-k", "--keepfiles", dest="keepfiles", type=int, help="Keep this number of unique files in drive. delete older files if necessary. [default: %(default)s]", default=1)
         parser.add_argument("-d", "--debug", dest="DEBUG", action="store_true", help="print out debuggung info [default: %(default)s]", default=False)
         parser.add_argument("-e", "--excludefolder", dest="excludefolders", action="append", help="exclude this directory from the gzipped directory [default: %(default)s]", default=None)
-        parser.add_argument("-w", "--writemd5dir", dest="writemd5dir", help="Write the md5 results for all files to be backed up to this directory. [default: %(default)s]", default=None)
+        parser.add_argument("-w", "--writemd5", dest="writemd5", action="store_true", help="Upload the md5 results for uploaded files. [default: %(default)s]", default=False)
         parser.add_argument(dest="directories", help="space separated list of directories to zip & upload to drive", nargs='+')
 
         # Process arguments
@@ -187,7 +187,7 @@ USAGE
         backupfolder = args.backupfolder
         keepfiles = args.keepfiles
         excludefolders = args.excludefolders
-        writemd5dir = args.writemd5dir
+        writemd5 = args.writemd5
         DEBUG = args.DEBUG
         directories = args.directories
         if len(settingsfile) > 0:
@@ -236,11 +236,6 @@ USAGE
                         p1 = run(md5args, stdout=PIPE, check=True)
                         p2 = run(['sort'], input=p1.stdout, stdout=PIPE, check=True)
                         p3 = run(['xargs', '-n', '1', 'md5sum'], input=p2.stdout, stdout=PIPE, check=True)
-                        utcnow = datetime.utcnow().isoformat()
-                        if writemd5dir is not None:
-                            md5file = "%s/%s%s.%s.md5" % (writemd5dir, dirname, excludestring.replace(re.sub('[\-/]','_',parentname), ''), utcnow.replace(':', '.')) 
-                            with open(md5file, 'w') as f:
-                                f.write(p3.stdout.decode("utf-8"))
                         p4 = run(['md5sum'], input = p3.stdout, stdout=PIPE, check=True)
                         checksum = p4.stdout.strip().decode("utf-8")
                     except CalledProcessError as e:
@@ -252,11 +247,12 @@ USAGE
                     
                     backuproot =  directory.replace(os.path.sep,'_')[1:] + excludestring.replace(re.sub('[\-/]','_',parentname), '').replace('__','_')
                     # check to see if this file already exists on Drive, if so check its checksum
-                    oldpaths, oldids, oldfiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s'" % (utcnow, backuproot), verbose=DEBUG)
+                    utcnow = datetime.utcnow().isoformat()
+                    oldpaths, oldids, oldfiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s' and name contains 'tgz'" % (utcnow, backuproot), verbose=DEBUG)
                     fileexists = False
                     for file in oldfiles:
                         # double check that the file is really a match
-                        if backuproot in file.get("name"):
+                        if backuproot in file.get("name") and '.tgz' in file.get("name"):
                             properties = file.get('properties', None)
                             if properties is not None:
                                 oldchecksum = properties.get('checksum', None)
@@ -267,7 +263,12 @@ USAGE
                                     exists.append("filename=%s/%s already exists and is identical" % (backupfolder, file.get("name")))
                                     break
                     if not fileexists:
-                        backupfile = "%s%s%s.%s.tgz" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat().replace(':', '.'))
+                        utcnow = datetime.now().isoformat().replace(':', '.')
+                        backupfile = "%s%s%s.%s.tgz" %('/tmp',os.path.sep, backuproot, utcnow)
+                        if writemd5:
+                            md5file = "%s%s%s.%s.md5" %('/tmp',os.path.sep, backuproot, utcnow) 
+                            with open(md5file, 'w') as f:
+                                f.write(p3.stdout.decode("utf-8"))
                         tarargs = ['tar']
                         if excludefolders is not None:
                             for excludefolder in excludefolders:
@@ -294,6 +295,8 @@ USAGE
                         uploadedpath, uploadedid, uploadedfile = gdrive.upload_file_to_path(filename=backupfile, parentpath=backupfolder, checksum=checksum, verbose=DEBUG) 
                         if uploadedid is not None:
                             successful.append(directory + (" (filename=%s, size=%s)" % (uploadedpath, uploadedfile.get("size"))))
+                            if writemd5:
+                                md5path, md5id, md5file = gdrive.upload_file_to_path(filename=md5file, parentpath=backupfolder, verbose=DEBUG)
                         for rmfile in glob.glob("%s*" % os.path.join('/tmp', backuproot)):
                             fileToRemove = os.path.join('/tmp', rmfile)
                             try:
@@ -308,14 +311,21 @@ USAGE
                                 continue
                         oldfiles.reverse()
                         indx = 1
-                        for file in oldfiles:
-                            if indx >= keepfiles and backuproot in file.get('name'):
+                        for file in  oldfiles:
+                            if backuproot in file.get("name"):
                                 # double check the name comparison here
-                                gdrive.delete_file_id(fileid=file.get('id'), verbose=DEBUG)
-                                if verbose:
-                                    pathlist, thispath = gdrive.get_path(file=file, verbose=DEBUG)
-                                    sys.stdout.write("removing %s from Google Drive\n" % thispath)
-                            if backuproot in file.get('name'):
+                                if indx >= keepfiles:
+                                    gdrive.delete_file_id(fileid=file.get('id'), verbose=DEBUG)
+                                    if verbose:
+                                        pathlist, thispath = gdrive.get_path(file=file, verbose=DEBUG)
+                                        sys.stdout.write("removing %s from Google Drive\n" % thispath)
+                                    try:
+                                        gdrive.delete_file_path(path='%s/%s' %(backupfolder, file.get("name").replace("tgz","md5")))
+                                        if verbose:
+                                            sys.stdout.write("removing %s/%s from Google Drive\n" % (backupfolder, file.get("name").replace("tgz","md5")))
+                                    except GoogleDriveException as e:
+                                        if 'unable to find filepath' in str(e):
+                                            pass
                                 indx = indx + 1
                 else:
                     if verbose:
