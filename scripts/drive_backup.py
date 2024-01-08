@@ -179,6 +179,7 @@ USAGE
         parser.add_argument("-d", "--debug", dest="DEBUG", action="store_true", help="print out debuggung info [default: %(default)s]", default=False)
         parser.add_argument("-e", "--excludefolder", dest="excludefolders", action="append", help="exclude this directory from the gzipped directory [default: %(default)s]", default=None)
         parser.add_argument("-w", "--writemd5", dest="writemd5", action="store_true", help="Upload the md5 results for uploaded files. [default: %(default)s]", default=False)
+        parser.add_argument("-f", "--forceupload", dest="forceupload", action="store_true", help="Force uploading of files even if checksums indicate the identical file already exists on drive. [default: %(default)s]", default=False)
         parser.add_argument(dest="directories", help="space separated list of directories to zip & upload to drive", nargs='+')
 
         # Process arguments
@@ -189,6 +190,7 @@ USAGE
         excludefolders = args.excludefolders
         writemd5 = args.writemd5
         DEBUG = args.DEBUG
+        forceupload = args.forceupload
         directories = args.directories
         if len(settingsfile) > 0:
             try:
@@ -258,7 +260,7 @@ USAGE
                                 oldchecksum = properties.get('checksum', None)
                                 if oldchecksum is not None and verbose:
                                     sys.stdout.write("new checksum=%s, drive checksum=%s\n" % (checksum, oldchecksum))
-                                if oldchecksum == checksum:
+                                if oldchecksum == checksum and not forceupload:
                                     fileexists = True
                                     exists.append("filename=%s/%s already exists and is identical" % (backupfolder, file.get("name")))
                                     break
