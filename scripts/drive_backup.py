@@ -224,7 +224,8 @@ USAGE
                 parentname = str(path.parent.absolute())
                 dirname = path.parts[-1]
                 if os.path.exists(directory):
-                    md5args = ['find',directory]
+                    # follow symlinks with -L
+                    md5args = ['find', '-L', directory]
                     if excludefolders is not None:
                         for excludefolder in excludefolders:
                             md5args.extend(["-not", "-path", "%s/*" % excludefolder])
@@ -237,7 +238,8 @@ USAGE
                     try:
                         p1 = run(md5args, stdout=PIPE, check=True)
                         p2 = run(['sort'], input=p1.stdout, stdout=PIPE, check=True)
-                        p3 = run(['xargs', '-n', '1', 'md5sum'], input=p2.stdout, stdout=PIPE, check=True)
+                        # don't check return code in case some file is inaccessible
+                        p3 = run(['xargs', '-n', '1', 'md5sum'], input=p2.stdout, stdout=PIPE, check=False)
                         p4 = run(['md5sum'], input = p3.stdout, stdout=PIPE, check=True)
                         checksum = p4.stdout.strip().decode("utf-8")
                     except CalledProcessError as e:
@@ -282,7 +284,8 @@ USAGE
                             sys.stdout.write("Taring %s to %s\n" % (directory, backupfile))
                             sys.stdout.write("using command: %s\n" % tarcommand)
                         try:
-                            run(tarargs, stderr=PIPE, check=True)
+                            # don't check return code in case some file is inaccessible
+                            run(tarargs, stderr=PIPE, check=False)
                         except CalledProcessError as e:
                             # try again after a 5 second delay
                             time.sleep(5)
