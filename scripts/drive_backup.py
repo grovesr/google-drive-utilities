@@ -177,7 +177,7 @@ USAGE
         parser.add_argument("-b", "--backupfolder", dest="backupfolder", help="Folder under My Drive to upload the zippped file [default: %(default)s]", default="/Backup")
         parser.add_argument("-k", "--keepfiles", dest="keepfiles", type=int, help="Keep this number of unique files in drive. delete older files if necessary. [default: %(default)s]", default=1)
         parser.add_argument("-d", "--debug", dest="DEBUG", action="store_true", help="print out debuggung info [default: %(default)s]", default=False)
-        parser.add_argument("-e", "--excludefolder", dest="excludefolders", action="append", help="exclude this directory from the gzipped directory [default: %(default)s]", default=None)
+        parser.add_argument("-e", "--excludefolders", dest="excludefolders", action="append", help="exclude this directory from the gzipped directory [default: %(default)s]", default=None)
         parser.add_argument("-w", "--writemd5", dest="writemd5", action="store_true", help="Upload the md5 results for uploaded files. [default: %(default)s]", default=False)
         parser.add_argument("-f", "--forceupload", dest="forceupload", action="store_true", help="Force uploading of files even if checksums indicate the identical file already exists on drive. [default: %(default)s]", default=False)
         parser.add_argument(dest="directories", help="space separated list of directories to zip & upload to drive", nargs='+')
@@ -187,9 +187,9 @@ USAGE
         settingsfile = args.settingsfile
         backupfolder = args.backupfolder
         keepfiles = args.keepfiles
+        DEBUG = args.DEBUG
         excludefolders = args.excludefolders
         writemd5 = args.writemd5
-        DEBUG = args.DEBUG
         forceupload = args.forceupload
         directories = args.directories
         if len(settingsfile) > 0:
@@ -212,7 +212,6 @@ USAGE
                 excludestring = excludestring + re.sub('[\*\[\]\-/]', '_', excludefolder)[1:]
         else:
             excludestring = excludestring + "none"
-        directories = args.directories
         try:
             gdrive = GoogleDrive(keyfile, tokenfile, scopes, verbose=DEBUG)
             backupfolderpath, backupfolderid, backupfolderfile = gdrive.create_folder_path(backupfolder)
