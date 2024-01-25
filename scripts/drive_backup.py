@@ -273,7 +273,8 @@ USAGE
                             md5file = "%s%s%s.%s.md5" %('/tmp',os.path.sep, backuproot, utcnow) 
                             with open(md5file, 'w') as f:
                                 f.write(p3.stdout.decode("utf-8"))
-                        tarargs = ['tar']
+                        # include files accessed through symbolic links        
+                        tarargs = ['tar', '--dereference']
                         if excludefolders is not None:
                             for excludefolder in excludefolders:
                                 tarargs.extend(['--exclude', excludefolder.replace(parentname, '')[1:]])
