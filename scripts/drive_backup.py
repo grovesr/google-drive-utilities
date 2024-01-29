@@ -314,7 +314,6 @@ USAGE
                                 else:
                                     logger.error("unable to remove %s, Error='%s'" % (fileToRemove, e.stderr.decode()))
                                 continue
-                        oldfiles.reverse()
                         indx = 1
                         for file in  oldfiles:
                             if backuproot in file.get("name"):
